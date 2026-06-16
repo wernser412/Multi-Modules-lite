@@ -4,6 +4,8 @@
 // @version      2026.06.15
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos
 // @author       wernser412
+// @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
+// @downloadURL  https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Multi%20Modules%20Lite.user.js
 // @match        *://*/*
 // @run-at       document-start
 // @grant        GM_addStyle
