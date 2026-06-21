@@ -1,6 +1,6 @@
 # ⚙️ Multi Modules Lite
 
-**Última actualización:** 15 de junio de 2026
+**Última actualización:** 20 de junio de 2026
 
 ![Tampermonkey](https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/GUI.png)
 
