@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.06.15
+// @version      2026.06.20
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -243,6 +243,25 @@ register("imageTooltip", {
 
     const tip = document.createElement("div");
 
+      const preview = document.createElement("img");
+
+Object.assign(preview.style, {
+
+    width: "220px",
+    maxHeight: "160px",
+    objectFit: "contain",
+    display: "block",
+    borderRadius: "6px",
+    marginBottom: "6px"
+
+});
+
+tip.appendChild(preview);
+
+const txt = document.createElement("div");
+
+tip.appendChild(txt);
+
     Object.assign(tip.style, {
 
       position: "fixed",
@@ -258,7 +277,7 @@ register("imageTooltip", {
       wordBreak: "break-all"
     });
 
-    document.body.appendChild(tip);
+    document.documentElement.appendChild(tip);
 
     let lastUrl = "";
     let timer = null;
@@ -283,48 +302,118 @@ register("imageTooltip", {
       } catch {}
     };
 
+
+
     const getImageUrlFrom = (el, e) => {
       if (!el) return "";
-      const extract = (node) => {
-        if (!node || node.nodeType !== 1) return "";
-        const tag = node.nodeName.toLowerCase();
+
+const extract = (node) => {
+
+    while (node) {
+
+        if (node.nodeType !== 1) {
+            node = node.parentElement;
+            continue;
+        }
+
+        const tag = node.tagName.toLowerCase();
+
+        // IMG normal
         if (tag === "img") {
-          return node.currentSrc || node.src || "";
+
+            return (
+                node.getAttribute("orig") ||
+                node.currentSrc ||
+                node.src ||
+                node.getAttribute("data-src") ||
+                node.getAttribute("data-original") ||
+                ""
+            );
+
         }
-        if (
-          node.namespaceURI ===
-          "http://www.w3.org/2000/svg"
-          &&
-          tag === "image"
-        ) {
-          return node.getAttribute("href")
-            ||
-            node.getAttribute("xlink:href");
+
+        // SVG <image> (Facebook)
+        if (tag === "image") {
+
+            return (
+                node.getAttribute("href") ||
+                node.getAttribute("xlink:href") ||
+                ""
+            );
+
         }
+
+        // Buscar imágenes dentro del nodo
+        const child =
+    node.querySelector?.("img")
+    ||
+    node.querySelector?.("image");
+
+
+        if (child) {
+
+            const cs2 = getComputedStyle(child);
+
+return (
+    child.getAttribute("orig") ||
+    child.currentSrc ||
+    child.src ||
+    child.getAttribute("data-src") ||
+    child.getAttribute("data-original") ||
+    child.getAttribute("href") ||
+    child.getAttribute("xlink:href") ||
+    (
+        cs2.backgroundImage !== "none"
+        &&
+        cs2.backgroundImage.match(
+            /url\(["']?(.*?)["']?\)/
+        )?.[1]
+    ) ||
+    ""
+);
+
+        }
+
+        // background-image
         const cs = getComputedStyle(node);
+
         if (
-          cs?.backgroundImage
-          &&
-          cs.backgroundImage !== "none"
+            cs.backgroundImage &&
+            cs.backgroundImage !== "none"
         ) {
-          const m = cs.backgroundImage
-            .match(/url\(["']?(.*?)["']?\)/);
-          if (m) return m[1];
+
+            const m = cs.backgroundImage.match(
+                /url\(["']?(.*?)["']?\)/
+            );
+
+            if (m) return m[1];
+
         }
-        return "";
-      };
+
+        node = node.parentElement;
+
+    }
+
+    return "";
+
+};
 
       const stack = document.elementsFromPoint(
         e.clientX,
         e.clientY
       ) || [];
 
-      for (const node of stack) {
-        const url = extract(node);
-        if (url) return url;
-      }
 
-      return extract(el);
+for (const node of stack) {
+
+    const url = extract(node);
+
+    if (url) return url;
+
+}
+
+return extract(el);
+
     };
 
     const startTimer = (url) => {
@@ -336,14 +425,20 @@ register("imageTooltip", {
           clearInterval(timer);
           return;
         }
-        tip.textContent =
-          `⏱ ${countdown}s | ${url}`;
-        countdown--;
-        if (countdown < 0 && !copied) {
+
+        preview.src = url;
+
+txt.textContent =
+    `⏱ ${countdown}s`;
+
+countdown--;
+
+if (countdown < 0 && !copied) {
+
           copied = true;
           clearInterval(timer);
           copyToClipboard(url);
-          tip.textContent = "✅ COPIADO";
+          txt.textContent = "✅ COPIADO";
           tip.style.background = "#00ff99";
           tip.style.color = "#000";
           setTimeout(() => {
@@ -355,6 +450,11 @@ register("imageTooltip", {
     };
 
     const onMove = (e) => {
+
+          if (!tip.isConnected) {
+    document.documentElement.appendChild(tip);
+  }
+
       const el = document.elementFromPoint(
         e.clientX,
         e.clientY
