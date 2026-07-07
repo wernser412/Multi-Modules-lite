@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.06.20
+// @version      2026.07.07
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -194,35 +194,76 @@ const wait = setInterval(() => {
 register("ultraUnlock", {
   title: "🖼 Desbloquear web",
 
-enable() {
+  enable() {
 
-    GM_addStyle(`
-      * {
-        user-select: text !important;
-        -webkit-user-select: text !important;
-      }
-    `);
+    // Permite seleccionar texto en cualquier elemento.
+GM_addStyle(`
+  * {
+    user-select: text !important;              /* 📝 Permite seleccionar texto en cualquier elemento de la página. Muchas webs usan "user-select: none" para impedir la selección. */
+    -webkit-user-select: text !important;      /* 🌐 Hace lo mismo para Chrome, Edge, Brave, Opera y otros navegadores basados en Chromium/WebKit. */
+    -moz-user-select: text !important;         /* 🦊 Compatibilidad con Firefox. */
+    -ms-user-select: text !important;          /* 🖥 Compatibilidad con Internet Explorer y Edge Legacy. */
+    -webkit-touch-callout: default !important; /* 📱 En Safari para iPhone/iPad vuelve a habilitar el menú al mantener presionado un texto (Copiar, Buscar, Compartir, etc.). */
+  }
+  input,
+  textarea {
+  user-select: text !important;         /*  ✏ Permite seleccionar texto dentro de cajas de texto e inputs, incluso si la página intenta bloquearlo. */
+  -webkit-user-select: text !important; /* 🌐 Compatibilidad con Chrome, Edge, Brave y Opera para inputs y textareas. */
+    }
+
+`);
 
     const events = [
-      "copy",
-      "cut",
-      "paste",
-      "contextmenu",
-      "selectstart"
+
+      "copy",         // 📋 Desbloquea Ctrl+C y la opción "Copiar" del menú contextual.
+      "beforecopy",   // 📋 Evita que la página bloquee la copia antes de ejecutarla.
+      "cut",          // ✂ Desbloquea Ctrl+X y evita restricciones al cortar.
+      "paste",        // 📥 Evita bloqueos al pegar contenido (Ctrl+V).
+      "contextmenu",  // 🖱 Desbloquea el menú contextual (clic derecho).
+      "selectstart",  // 📝 Permite seleccionar texto libremente.
+      "keydown",      // ⌨ Evita bloqueos de atajos como Ctrl+C, Ctrl+A, Ctrl+X, Ctrl+V.
+      "keyup",        // ⌨ Complementa la protección de keydown y evita acciones al soltar la tecla.
+      "mousedown",    // 🖱 Evita bloqueos al presionar el botón del mouse.
+      "mouseup",      // 🖱 Evita bloqueos al soltar el botón del mouse.
+      "dragstart",    // 📦 Permite arrastrar texto, enlaces e imágenes.
+      "drag",         // 📦 Evita restricciones durante el arrastre.
+      "dragend",      // 📦 Finaliza el arrastre sin interferencias.
+      "select",       // 🔤 Evita que la página manipule la selección de texto.
+      "auxclick",     // 🖱 Desbloquea el clic central y otros botones del mouse.
+      "dblclick"      // 🖱 Evita bloqueos asociados al doble clic.
+
     ];
 
     events.forEach(ev => {
+
       document.addEventListener(ev, e => {
+
+        // Detiene cualquier script de la página que intente bloquear esta acción.
         e.stopImmediatePropagation();
+
       }, true);
+
     });
 
-    console.log("UltraUnlock ON");
+    // Elimina bloqueos mediante propiedades del DOM.
+    try {
 
-  },
+      document.oncopy = null;
+      document.oncut = null;
+      document.onpaste = null;
+      document.oncontextmenu = null;
+      document.onselectstart = null;
+      document.ondragstart = null;
 
-  disable() {
-    console.log("UltraUnlock OFF");
+      window.oncopy = null;
+      window.oncut = null;
+      window.onpaste = null;
+      window.oncontextmenu = null;
+
+    } catch {}
+
+    console.log("✅ UltraUnlock ON");
+
   }
 
 });
