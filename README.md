@@ -1,171 +1,135 @@
-# ⚙️ Multi Modules Lite
+# Multi Modules Lite
 
-**Última actualización:** 07 de julio de 2026
+**Última Actualización:** 14 de julio de 2026
 
-![Tampermonkey](https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/GUI.png)
+Framework modular para **Tampermonkey** que reúne múltiples mejoras para distintos sitios web en un único UserScript. Cada función se encuentra implementada como un módulo independiente que puede activarse o desactivarse individualmente desde un panel flotante moderno.
 
-**Multi Modules Lite** es un framework modular para Tampermonkey que permite activar y desactivar funciones independientes desde un panel flotante.
+![GUI](GUI.png)
 
-Incluye herramientas para desbloquear páginas web, seleccionar texto dentro de enlaces, detectar imágenes protegidas y agregar funciones extra a YouTube.
+## 📖 Descripción
 
----
+**Multi Modules Lite** es un framework modular para **Tampermonkey** diseñado para agrupar diversas utilidades en un solo script.
 
-## ✨ Características
+Cada característica funciona como un módulo independiente cargado mediante `@require`, lo que facilita mantener el código organizado y ampliar el proyecto simplemente agregando nuevos módulos.
 
-### 🔓 Ultra Unlock
-
-Restaura funciones bloqueadas por páginas web:
-
-* Permite seleccionar texto.
-* Elimina `user-select: none`.
-* Habilita copiar contenido protegido.
-* Desbloquea eventos comunes como:
-
-  * `copy`
-  * `cut`
-  * `paste`
-  * `contextmenu`
-  * `selectstart`
+El usuario puede habilitar o deshabilitar cada módulo desde un menú flotante integrado, sin necesidad de modificar el código fuente.
 
 ---
 
-### 🖼 Image Tooltip Pro
+# 📥 Instalación
 
-Detecta imágenes incluso cuando están protegidas.
+1. Instala la extensión **Tampermonkey** en tu navegador.
 
-Características:
+2. Instala el script desde GitHub:
 
-* Detecta imágenes `<img>`.
-* Detecta imágenes SVG.
-* Detecta `background-image`.
-* Muestra la URL real.
-* Cuenta regresiva visual.
-* Copia automática al portapapeles después de 10 segundos.
-* Confirmación visual al copiar.
+**➡️ [Instalar Script](https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Multi%20Modules%20Lite.user.js)**
 
 ---
 
-### 🔗 Link Select
+# ✨ Características
 
-Permite seleccionar texto dentro de enlaces sin abrirlos.
-
-Características:
-
-* Selección estilo Opera.
-* Compatible con:
-
-  * Ctrl + selección
-  * Shift + selección
-  * Selección extendida
-* Evita clics accidentales al seleccionar.
-
----
-
-### 🖱 Context Menu
-
-* Restaura el clic derecho.
-* Evita bloqueos simples del menú contextual.
+- ⚙ Framework modular basado en módulos independientes.
+- 🧩 Carga automática de módulos mediante `@require`.
+- 🎛 Panel flotante moderno para administrar los módulos.
+- 🔘 Activación y desactivación individual de cada módulo.
+- 🚀 Botón flotante siempre disponible.
+- 📌 Posibilidad de mostrar u ocultar el botón desde el menú de Tampermonkey.
+- 🔢 Contador de módulos activos.
+- 📂 Organización por categorías.
+- 💾 Configuración guardada automáticamente.
+- 📱 Compatible con navegación dinámica (SPA).
+- 🖥 Compatible con pantalla completa (Fullscreen API).
+- 🔄 Restauración automática del panel tras cambios dinámicos del DOM.
+- 🎨 Interfaz moderna con animaciones suaves.
+- 🛡 Sistema preparado para agregar nuevos módulos fácilmente.
 
 ---
 
-### 🧩 Iframe Unlock
+# 🧩 Módulos incluidos
 
-* Permite interactuar con iframes.
-* Restaura eventos del mouse sobre contenido embebido.
+Actualmente el proyecto incluye los siguientes módulos:
 
----
+- 🔓 **Ultra Unlock**
+  - Elimina diversas restricciones impuestas por sitios web.
+  - Permite copiar texto.
+  - Permite seleccionar contenido bloqueado.
+  - Reactiva el menú contextual.
+  - Desbloquea eventos bloqueados por JavaScript.
 
-# 🎬 Módulos para YouTube
+- 🖼 **Image Tooltip**
+  - Muestra una vista previa ampliada al pasar el cursor sobre imágenes.
 
-### ⏩ Speed Button
+- 🔗 **Link Select**
+  - Permite seleccionar fácilmente el texto de los enlaces.
 
-Agrega un botón para cambiar la velocidad de reproducción:
+- 🪟 **Iframe Unlock**
+  - Elimina restricciones comunes aplicadas a iframes.
 
-* 1×
-* 1.5×
-* 2×
+- ▶ **YouTube Speed Button**
+  - Añade controles rápidos para modificar la velocidad de reproducción.
 
-Integrado directamente en los controles de YouTube.
+- 🔊 **YouTube Volume Boost**
+  - Permite aumentar el volumen por encima del límite normal.
 
----
-
-### 🔊 Volume Boost
-
-Control de volumen avanzado:
-
-* Ajustable entre 100% y 300%.
-* Usa Web Audio API.
-* Guarda la configuración automáticamente.
-* Funciona entre cambios de video.
-
----
-
-### 💬 Toggle Comments
-
-Permite ocultar o mostrar comentarios con un solo botón.
-
-Características:
-
-* Botón integrado en YouTube.
-* Guarda el estado.
-* Compatible con la navegación SPA de YouTube.
+- 💬 **YouTube Toggle Comments**
+  - Permite mostrar u ocultar rápidamente la sección de comentarios.
 
 ---
 
-## 🛠 Instalación
+# 🖥️ Uso
 
-1. Instala Tampermonkey.
-2. Instala el script:
-
-👉 **[Descargar Script](https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Multi%20Modules%20Lite.user.js)**
-
----
-
-## ⚙ Panel Modular
-
-El script incluye un panel flotante con:
-
-* Activación/desactivación por módulo.
-* Configuración persistente.
-* Diseño minimalista.
-* Apertura mediante botón ⚙.
+1. Instala el UserScript.
+2. Aparecerá el botón flotante ⚙.
+3. Haz clic sobre él para abrir el panel.
+4. Activa únicamente los módulos que desees utilizar.
+5. Los cambios se aplican inmediatamente.
 
 ---
 
-## 📦 Módulos incluidos
+# ⚙ Panel de control
 
-| Módulo                  | Estado |
-| ----------------------- | ------ |
-| Ultra Unlock            | ✔      |
-| Image Tooltip Pro       | ✔      |
-| Link Select             | ✔      |
-| Context Menu            | ✔      |
-| Iframe Unlock           | ✔      |
-| YouTube Speed Button    | ✔      |
-| YouTube Volume Boost    | ✔      |
-| YouTube Toggle Comments | ✔      |
+El panel permite:
+
+- Activar un módulo.
+- Desactivar un módulo.
+- Activar todos los módulos.
+- Desactivar todos los módulos.
+- Visualizar los módulos organizados por categorías.
+- Ver la cantidad de módulos activos.
 
 ---
 
-## 🧠 Notas técnicas
+# 💾 Configuración
 
-* Ejecuta en `document-start`.
-* Arquitectura modular.
-* Configuración persistente mediante `GM_getValue` y `GM_setValue`.
-* Compatible con navegación SPA.
-* Zero tracking.
+El estado de cada módulo se guarda automáticamente utilizando el almacenamiento de Tampermonkey.
+
+Al volver a abrir el navegador, los módulos previamente activados se restauran automáticamente.
 
 ---
 
-## 📄 Licencia
+# 🧩 Arquitectura modular
 
-MIT
+Cada módulo se desarrolla como un archivo JavaScript independiente y se carga automáticamente mediante `@require`.
+
+Esto permite:
+
+- Agregar nuevos módulos sin modificar el núcleo.
+- Mantener el código organizado.
+- Facilitar el mantenimiento del proyecto.
+- Compartir módulos entre distintos proyectos.
 
 ---
 
-## 💬 Autor
+# 🌐 Sitios compatibles
 
-**wernser412**
+El framework puede ejecutarse en cualquier sitio web.
 
-Un solo script, múltiples módulos.
-Activa solo lo que necesites.
+Algunos módulos están diseñados específicamente para determinados sitios, como YouTube, mientras que otros funcionan de forma general en cualquier página.
+
+---
+
+# 📄 Licencia
+
+Este proyecto se distribuye bajo la licencia **MIT**.
+
+Consulta el archivo **LICENSE** para más información.
