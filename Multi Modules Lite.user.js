@@ -77,7 +77,14 @@ function toggle(name, on) {
  UI
 ********************************************************/
 
-let fab, panel, badge;
+let fab, panel, badge, fabObserver, watchdogTimer;
+const STYLE_ID = "mml-theme-style";
+
+// Estado de visibilidad mantenido en memoria. Se lee de storage UNA sola
+// vez al arrancar, y luego solo se modifica cuando el usuario hace click
+// en el comando del menú. Esto evita que el watchdog/observer "revivan"
+// el botón por leer un valor stale del storage en cada chequeo.
+let fabVisibleState = GM_getValue(FAB_VISIBLE_KEY, true);
 
 const THEME = `
   #mml-fab {
@@ -150,6 +157,37 @@ const THEME = `
   #mml-panel .mml-foot { padding:6px 12px 10px; font-size:10px; color:#666; text-align:center; border-top:1px solid rgba(255,255,255,.05); }
 `;
 
+/**
+ * Inyecta el CSS manualmente (en vez de confiar solo en GM_addStyle)
+ * usando un <style id="mml-theme-style"> propio, para poder detectar
+ * si YouTube lo elimina (p. ej. al reescribir <head> en navegación SPA)
+ * y reinyectarlo.
+ */
+function ensureStyleInjected() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = THEME;
+  (document.head || document.documentElement).appendChild(style);
+}
+
+/**
+ * Maneja el problema de la Fullscreen API nativa: cuando un elemento
+ * entra en fullscreen (p. ej. el <video> de YouTube), el navegador lo
+ * renderiza en una capa especial ("top layer") por encima de TODO lo
+ * demás, sin importar z-index. Un elemento position:fixed fuera de ese
+ * elemento queda tapado aunque siga existiendo en el DOM.
+ * Solución: si hay un elemento en fullscreen, movemos el fab/panel
+ * dentro de él; al salir, los devolvemos a documentElement.
+ */
+function handleFullscreenChange() {
+  if (!fab || !panel) return;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const target = fsEl || document.documentElement;
+  if (fab.parentNode !== target) target.appendChild(fab);
+  if (panel.parentNode !== target) target.appendChild(panel);
+}
+
 function updateBadge() {
   if (!badge) return;
   const count = Object.values(Core.modules).filter(m => m.enabled).length;
@@ -157,22 +195,72 @@ function updateBadge() {
   badge.style.display = count > 0 ? "flex" : "none";
 }
 
+/**
+ * Garantiza que exista UN SOLO #mml-fab y #mml-panel en el DOM,
+ * y que las referencias `fab` / `panel` apunten a los nodos reales
+ * y conectados. Esto corrige el bug de YouTube: al navegar (SPA/Polymer)
+ * el nodo puede quedar desconectado del árbol, o el script puede
+ * inyectarse más de una vez, dejando nodos duplicados "fantasma".
+ */
+function ensureFabAttached() {
+  // 0) Asegurar que el CSS siga existiendo (YouTube puede vaciar <head>).
+  ensureStyleInjected();
+
+  // 1) Eliminar duplicados si los hay, quedándonos con el primero.
+  const fabDupes = document.querySelectorAll("#mml-fab");
+  if (fabDupes.length > 1) {
+    fabDupes.forEach((n, i) => { if (i > 0) n.remove(); });
+  }
+  const panelDupes = document.querySelectorAll("#mml-panel");
+  if (panelDupes.length > 1) {
+    panelDupes.forEach((n, i) => { if (i > 0) n.remove(); });
+  }
+
+  // 2) Resincronizar referencias con lo que realmente hay en el DOM.
+  const realFab = document.getElementById("mml-fab");
+  const realPanel = document.getElementById("mml-panel");
+  if (realFab) fab = realFab;
+  if (realPanel) panel = realPanel;
+
+  // 3) Si nuestra referencia quedó desconectada del documento, reinsertarla
+  //    respetando si hay un elemento en fullscreen (top layer).
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const target = fsEl || document.documentElement;
+  if (fab && !document.documentElement.contains(fab)) {
+    target.appendChild(fab);
+  }
+  if (panel && !document.documentElement.contains(panel)) {
+    target.appendChild(panel);
+  }
+
+  // 4) Corregir ubicación respecto al fullscreen si cambió mientras tanto.
+  handleFullscreenChange();
+}
+
 function applyFabVisibility() {
   if (!fab) return;
-  const visible = GM_getValue(FAB_VISIBLE_KEY, true);
-  fab.style.display = visible ? "flex" : "none";
-  if (!visible) panel.classList.remove("open");
+  ensureFabAttached();
+  fab.style.display = fabVisibleState ? "flex" : "none";
+  if (!fabVisibleState) panel.classList.remove("open");
 }
 
 function toggleFabVisibility() {
-  const visible = GM_getValue(FAB_VISIBLE_KEY, true);
-  GM_setValue(FAB_VISIBLE_KEY, !visible);
+  fabVisibleState = !fabVisibleState;
+  GM_setValue(FAB_VISIBLE_KEY, fabVisibleState);
   applyFabVisibility();
 }
 
 function createUI() {
+  // Evita crear una segunda UI si el script ya corrió en este documento
+  // (p. ej. por doble inyección) — simplemente resincroniza y sale.
+  if (document.getElementById("mml-fab")) {
+    ensureFabAttached();
+    updateBadge();
+    applyFabVisibility();
+    return;
+  }
 
-  GM_addStyle(THEME);
+  ensureStyleInjected();
 
   fab = document.createElement("div");
   fab.id = "mml-fab";
@@ -233,6 +321,38 @@ function createUI() {
 
   updateBadge();
   applyFabVisibility();
+  observeFab();
+}
+
+/**
+ * Vigila el DOM y, si el FAB o el panel se desconectan
+ * (por ejemplo, YouTube reemplazando nodos al navegar entre videos
+ * o al entrar/salir de fullscreen), los vuelve a insertar automáticamente.
+ */
+function observeFab() {
+  if (fabObserver) fabObserver.disconnect();
+  fabObserver = new MutationObserver(() => {
+    if (!fab || !document.documentElement.contains(fab) ||
+        !panel || !document.documentElement.contains(panel) ||
+        !document.getElementById(STYLE_ID)) {
+      applyFabVisibility();
+    }
+  });
+  fabObserver.observe(document.documentElement, { childList: true, subtree: false });
+  fabObserver.observe(document.head || document.documentElement, { childList: true, subtree: false });
+
+  // Escuchar entradas/salidas de fullscreen nativo (YouTube, players embebidos, etc.)
+  ["fullscreenchange", "webkitfullscreenchange"].forEach(ev => {
+    document.addEventListener(ev, handleFullscreenChange, true);
+  });
+
+  // Respaldo por si el MutationObserver no llega a disparar en algún
+  // escenario particular de YouTube (SPA navigation, view-transitions, etc.)
+  if (watchdogTimer) clearInterval(watchdogTimer);
+  watchdogTimer = setInterval(() => {
+    ensureFabAttached();
+    if (fab) fab.style.display = fabVisibleState ? "flex" : "none";
+  }, 1500);
 }
 
 function render() {
