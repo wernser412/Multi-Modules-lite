@@ -5,12 +5,12 @@
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
-// @downloadURL  https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Multi%20Modules%20Lite.user.js
 // @match        *://*/*
 // @run-at       document-start
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 
 // 👇 Un @require por módulo. Reemplazá TU_USUARIO/TU_REPO si aplica.
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ultraUnlock.js
@@ -33,6 +33,8 @@ const Core = {
   settings: GM_getValue("modules_lite_pro", {}) || {},
   modules: {}
 };
+
+const FAB_VISIBLE_KEY = "mml_fab_visible";
 
 function save() {
   GM_setValue("modules_lite_pro", Core.settings);
@@ -79,25 +81,27 @@ let fab, panel, badge;
 
 const THEME = `
   #mml-fab {
-    position:fixed; right:18px; bottom:18px; width:56px; height:56px;
-    background:linear-gradient(135deg,#00ff99,#00c2a8); color:#04120e;
-    border-radius:50%; display:flex; align-items:center; justify-content:center;
-    cursor:pointer; font-size:24px; z-index:2147483647;
-    box-shadow:0 4px 16px rgba(0,0,0,.35);
-    transition:transform .15s ease, box-shadow .2s ease; user-select:none;
+    position:fixed; right:20px; bottom:20px; width:44px; height:44px;
+    border:none; border-radius:50%;
+    background:linear-gradient(140deg,#60a5fa,#2563eb 60%,#1e3a8a);
+    color:white; font-size:18px; font-weight:bold; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    z-index:999999;
+    box-shadow:0 6px 18px rgba(37,99,235,.4), 0 0 0 1px rgba(255,255,255,.08) inset;
+    transition:transform .2s ease, box-shadow .2s ease; user-select:none;
   }
-  #mml-fab:hover { transform:scale(1.06); box-shadow:0 6px 20px rgba(0,0,0,.45); }
+  #mml-fab:hover { box-shadow:0 10px 30px rgba(37,99,235,.6), 0 0 0 1px rgba(255,255,255,.08) inset; }
   #mml-fab:active { transform:scale(.94); }
 
   #mml-badge {
     position:absolute; top:-4px; right:-4px; min-width:18px; height:18px;
-    padding:0 4px; border-radius:9px; background:#111; color:#00ff99;
+    padding:0 4px; border-radius:9px; background:#111; color:#60a5fa;
     font-size:11px; font-weight:700; display:flex; align-items:center;
-    justify-content:center; border:2px solid #04120e;
+    justify-content:center; border:2px solid #1e3a8a;
   }
 
   #mml-panel {
-    position:fixed; right:18px; bottom:85px; width:300px; max-height:70vh;
+    position:fixed; right:20px; bottom:76px; width:300px; max-height:70vh;
     background:#14161a; color:#eee; border-radius:14px; padding:0;
     display:none; flex-direction:column; overflow:hidden; z-index:2147483647;
     font-family:-apple-system,Segoe UI,Arial,sans-serif; font-size:13px;
@@ -151,6 +155,19 @@ function updateBadge() {
   const count = Object.values(Core.modules).filter(m => m.enabled).length;
   badge.textContent = count;
   badge.style.display = count > 0 ? "flex" : "none";
+}
+
+function applyFabVisibility() {
+  if (!fab) return;
+  const visible = GM_getValue(FAB_VISIBLE_KEY, true);
+  fab.style.display = visible ? "flex" : "none";
+  if (!visible) panel.classList.remove("open");
+}
+
+function toggleFabVisibility() {
+  const visible = GM_getValue(FAB_VISIBLE_KEY, true);
+  GM_setValue(FAB_VISIBLE_KEY, !visible);
+  applyFabVisibility();
 }
 
 function createUI() {
@@ -215,6 +232,7 @@ function createUI() {
   };
 
   updateBadge();
+  applyFabVisibility();
 }
 
 function render() {
@@ -288,5 +306,7 @@ const wait = setInterval(() => {
   }, 0);
 
 }, 50);
+
+GM_registerMenuCommand("⚙ Mostrar/Ocultar botón flotante", toggleFabVisibility);
 
 })();
