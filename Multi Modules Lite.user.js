@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.07.13
+// @version      2026.07.14
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
+// @downloadURL  https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Multi%20Modules%20Lite.user.js
 // @match        *://*/*
 // @run-at       document-start
 // @grant        GM_addStyle
@@ -12,13 +13,13 @@
 // @grant        GM_setValue
 
 // 👇 Un @require por módulo. Reemplazá TU_USUARIO/TU_REPO si aplica.
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ultraUnlock.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/imageTooltip.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/linkSelect.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/iframeUnlock.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ytSpeedButton.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ytVolumeBoost.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ytToggleComments.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ultraUnlock.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/imageTooltip.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/linkSelect.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/iframeUnlock.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ytSpeedButton.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ytVolumeBoost.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ytToggleComments.js
 // ==/UserScript==
 
 (function () {
