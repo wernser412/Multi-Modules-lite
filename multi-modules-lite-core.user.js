@@ -11,13 +11,8 @@
 
 // 👇 Un @require por cada módulo alojado en GitHub.
 //    Usa raw.githubusercontent.com (o jsDelivr, ver nota abajo).
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/iframeUnlock.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/ultraUnlock.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/imageTooltip.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/linkSelect.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/ytSpeedButton.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/ytVolumeBoost.js
-// @require      https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/modules/ytToggleComments.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/iframeUnlock.js
+
 // ==/UserScript==
 
 (function () {
