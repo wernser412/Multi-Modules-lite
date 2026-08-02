@@ -22,6 +22,7 @@
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ytToggleComments.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/imageHoverZoom.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/plainCopy.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/showPasswords.js
 // ==/UserScript==
 
 (function () {
