@@ -43,6 +43,29 @@
         // posicionada por coordenadas, totalmente por fuera del árbol del
         // formulario.
 
+        // Recordar qué campos estaban "visibles" para restaurarlos tras
+        // recargar la página, y compartirlo entre todas las pestañas/
+        // ventanas del mismo sitio. Se guarda en localStorage (persiste
+        // hasta que lo apagues o borres el storage del sitio, incluso si
+        // cerrás el navegador) y se identifica cada input por name/id o,
+        // si no tiene, por su posición entre los campos de contraseña de
+        // la página.
+        const storageKey = `mml_pw_visible::${location.pathname}`;
+        const readVisibleSet = () => {
+          try {
+            return new Set(JSON.parse(localStorage.getItem(storageKey) || "[]"));
+          } catch {
+            return new Set();
+          }
+        };
+        const writeVisibleSet = (set) => {
+          try {
+            localStorage.setItem(storageKey, JSON.stringify([...set]));
+          } catch {}
+        };
+        let pwIndex = 0;
+        const keyFor = (input) => input.name || input.id || `idx:${input.dataset.mmlPwIdx}`;
+
         const tracked = new Map(); // input -> { toggle, showing }
         let rafId = null;
 
@@ -91,17 +114,33 @@
           if (tracked.has(input)) return;
           if (!input.isConnected) return;
 
+          if (input.dataset.mmlPwIdx === undefined) {
+            input.dataset.mmlPwIdx = String(pwIndex++);
+          }
+
           const toggle = document.createElement("span");
           toggle.className = "mml-pw-toggle";
-          toggle.textContent = "👁";
           toggle.title = "Mostrar/ocultar contraseña";
+
+          const applyState = (showing) => {
+            input.type = showing ? "text" : "password";
+            toggle.textContent = showing ? "🙈" : "👁";
+          };
 
           toggle.addEventListener("mousedown", (e) => e.preventDefault()); // no robar el foco del input
           toggle.addEventListener("click", () => {
-            const showing = input.type === "text";
-            input.type = showing ? "password" : "text";
-            toggle.textContent = showing ? "👁" : "🙈";
+            const showing = input.type !== "text";
+            applyState(showing);
+            const visibleSet = readVisibleSet();
+            const key = keyFor(input);
+            if (showing) visibleSet.add(key);
+            else visibleSet.delete(key);
+            writeVisibleSet(visibleSet);
           });
+
+          // Restaurar si este campo estaba "visible" antes de recargar.
+          const wasVisible = readVisibleSet().has(keyFor(input));
+          applyState(wasVisible);
 
           document.body.appendChild(toggle);
           tracked.set(input, { toggle });
@@ -144,6 +183,21 @@
         window.addEventListener("scroll", onReposition, true);
         window.addEventListener("resize", onReposition);
 
+        // Si tocás el ícono en otra pestaña del mismo sitio, sincroniza
+        // acá sin necesidad de recargar.
+        const onStorageSync = (e) => {
+          if (e.key !== storageKey) return;
+          const visibleSet = readVisibleSet();
+          tracked.forEach(({ toggle }, input) => {
+            const shouldShow = visibleSet.has(keyFor(input));
+            if ((input.type === "text") !== shouldShow) {
+              input.type = shouldShow ? "text" : "password";
+              toggle.textContent = shouldShow ? "🙈" : "👁";
+            }
+          });
+        };
+        window.addEventListener("storage", onStorageSync);
+
         this._cleanup = () => {
           observer.disconnect();
           stopLoop();
@@ -154,6 +208,10 @@
             input.type = "password";
           });
           tracked.clear();
+          try {
+            localStorage.removeItem(storageKey);
+          } catch {}
+          window.removeEventListener("storage", onStorageSync);
           this.active = false;
         };
       },
