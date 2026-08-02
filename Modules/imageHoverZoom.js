@@ -106,39 +106,55 @@
 
         let lastUrl = "";
 
-        const onOver = (e) => {
-          // Ignorar el propio panel para no auto-dispararse.
-          if (e.target === panel || panel.contains(e.target)) return;
+        // En vez de depender de mouseover/mouseout (que a veces no disparan
+        // bien: scroll rápido, elementos que se re-renderizan, overlays,
+        // z-index encimados, etc.), se revisa en cada mousemove qué hay
+        // realmente bajo el cursor. Así el panel nunca queda "pegado":
+        // si no hay imagen debajo, se oculta sí o sí en ese mismo movimiento.
+        const onMove = (e) => {
+          if (e.target === panel) return;
 
-          const el = e.target.closest("img, image, [style*='background-image']") || e.target;
-          if (isTooSmall(el)) return;
+          const el = e.target.closest?.("img, image, [style*='background-image']");
+
+          if (!el || isTooSmall(el)) {
+            if (lastUrl) {
+              lastUrl = "";
+              panel.style.display = "none";
+            }
+            return;
+          }
 
           const url = extract(el);
-          if (!url || url === panel.src) return;
 
-          lastUrl = url;
-          panel.src = url;
+          if (!url) {
+            if (lastUrl) {
+              lastUrl = "";
+              panel.style.display = "none";
+            }
+            return;
+          }
+
+          if (url !== lastUrl) {
+            lastUrl = url;
+            panel.src = url;
+          }
           panel.style.display = "block";
         };
 
-        const onOut = (e) => {
-          const related = e.relatedTarget;
-          // Si el mouse se mueve hacia el propio panel, no ocultarlo.
-          if (related && (related === panel || panel.contains(related))) return;
-
-          const el = e.target.closest("img, image, [style*='background-image']");
-          if (!el) return;
-
-          lastUrl = "";
-          panel.style.display = "none";
+        // Si el cursor sale de la ventana, también se oculta.
+        const onLeaveWindow = (e) => {
+          if (!e.relatedTarget && !e.toElement) {
+            lastUrl = "";
+            panel.style.display = "none";
+          }
         };
 
-        document.addEventListener("mouseover", onOver, true);
-        document.addEventListener("mouseout", onOut, true);
+        document.addEventListener("mousemove", onMove, true);
+        document.addEventListener("mouseout", onLeaveWindow, true);
 
         this._cleanup = () => {
-          document.removeEventListener("mouseover", onOver, true);
-          document.removeEventListener("mouseout", onOut, true);
+          document.removeEventListener("mousemove", onMove, true);
+          document.removeEventListener("mouseout", onLeaveWindow, true);
           panel.remove();
           this.active = false;
         };
