@@ -1,6 +1,6 @@
 # Multi Modules Lite
 
-**Última Actualización:** 14 de julio de 2026
+**Última Actualización:** 03 de agosto de 2026
 
 Framework modular para **Tampermonkey** que reúne múltiples mejoras para distintos sitios web en un único UserScript. Cada función se encuentra implementada como un módulo independiente que puede activarse o desactivarse individualmente desde un panel flotante moderno.
 
