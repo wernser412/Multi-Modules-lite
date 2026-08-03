@@ -6,7 +6,7 @@
     name: "mathSelectSolve",
     mod: {
       title: "🧮 Resolver selección matemática",
-      desc: "Al seleccionar una operación (ej: 4+5) aparece un ícono para ver el resultado",
+      desc: "Al seleccionar una operación (ej: 1+5) aparece un ícono para ver el resultado",
       category: "General",
 
       enable() {
@@ -245,7 +245,12 @@
         };
 
         // ---------- Detección de selección ----------
-        const onSelectionUp = () => {
+        const onSelectionUp = (e) => {
+          // Si el mouseup ocurrió sobre el ícono o la burbuja, no reprocesar
+          // la selección: eso destruiría y recrearía el ícono antes de que
+          // el navegador llegue a disparar el evento "click" sobre él.
+          if (icon?.contains(e.target) || bubble?.contains(e.target)) return;
+
           const sel = window.getSelection();
           const text = sel?.toString().trim();
 
