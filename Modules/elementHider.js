@@ -9,12 +9,18 @@
   let hoverBox, hoverLabel, restoreFab, restorePanel, restoreList;
   let stylesInjected = false;
   let moduleActive = false;     // true mientras el switch del panel está encendido
-  let paused = false;           // true = modo selección en pausa (no oculta al clickear)
   let currentTarget = null;
   let applyTimer = null;
 
   const OWN_SELECTOR = "#mml-hider-box, #mml-hider-label, #mml-hider-panel, #mml-hider-fab, #mml-fab, #mml-panel";
   const STORE_KEY = "mml_hider_store_v1";
+  const PAUSED_KEY = "mml_hider_paused_v1";
+
+  // true = modo selección en pausa (no oculta al clickear). Se recuerda
+  // entre recargas tal como el usuario lo dejó.
+  let paused = (function () {
+    try { return !!GM_getValue(PAUSED_KEY, false); } catch { return false; }
+  })();
 
   /* ---------------- Estilos ---------------- */
 
@@ -306,6 +312,7 @@
 
   function togglePause() {
     paused = !paused;
+    try { GM_setValue(PAUSED_KEY, paused); } catch {}
     if (paused) clearHoverVisual();
     renderRestoreUI();
   }
@@ -419,6 +426,14 @@
     });
   }
 
+  // Quita por completo la GUI del módulo del DOM (fab, panel, overlay de
+  // hover). Las referencias se resetean para que ensure*Nodes() las vuelva
+  // a crear desde cero la próxima vez que se active el módulo.
+  function removeGuiNodes() {
+    [hoverBox, hoverLabel, restoreFab, restorePanel].forEach(n => n && n.remove());
+    hoverBox = hoverLabel = restoreFab = restorePanel = restoreList = null;
+  }
+
   /* ---------------- Watcher persistente (independiente del switch) ---------------- */
   // Reaplica lo guardado apenas hay DOM disponible, y sigue vigilando por si
   // el sitio carga contenido de forma diferida (SPA, lazy load, etc.).
@@ -456,7 +471,7 @@
         ensureHoverNodes();
         ensureRestoreNodes();
         moduleActive = true;
-        paused = false;
+        // "paused" se mantiene tal como el usuario lo dejó (persistido).
         applyPersisted();
         renderRestoreUI();
 
@@ -514,9 +529,11 @@
 
       disable() {
         this._cleanup?.();
-        // El panel de restaurar y los elementos ya ocultos siguen disponibles
-        // (y se seguirán reaplicando en próximas recargas) aunque el switch
-        // esté apagado.
+
+        // Al apagar el módulo: se restaura todo lo oculto (y se olvida lo
+        // guardado de esta página) y se retira la GUI del DOM por completo.
+        restoreAll();
+        removeGuiNodes();
       }
     }
   });
