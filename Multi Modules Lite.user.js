@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.08.03
+// @version      2026.08.04
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -26,6 +26,7 @@
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/mathSelectSolve.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/googleSelectSearch.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/translateSelect.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/stereogramDecoder.js
 // ==/UserScript==
 
 (function () {
