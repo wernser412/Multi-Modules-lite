@@ -25,7 +25,7 @@
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/showPasswords.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/mathSelectSolve.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/googleSelectSearch.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/Translateselect.js
+// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/translateSelect.js
 // ==/UserScript==
 
 (function () {
