@@ -6,7 +6,7 @@
     name: "translateSelect",
     mod: {
       title: "🌐 Traducir selección",
-      desc: "Al seleccionar texto aparece un ícono para traducirlo (auto-detecta idioma y alterna con tu idioma)",
+      desc: "Al seleccionar texto aparece un ícono para traducirlo a tu idioma, alternar español/inglés y escucharlo",
       category: "General",
 
       enable() {
@@ -16,10 +16,12 @@
 
         // ---------- Config ----------
         const LS_KEY = "mml_ts_target_lang";
-        // Idioma "de casa": si el texto detectado YA está en este idioma,
-        // se traduce a inglés en su lugar (comportamiento tipo Google Translate).
-        const HOME_LANG = (navigator.language || "es").slice(0, 2).toLowerCase() || "es";
-        const FALLBACK_LANG = HOME_LANG === "en" ? "es" : "en";
+        // Idioma "de casa": todo lo que selecciones se traduce a este
+        // idioma por defecto (esté en el idioma que esté el original).
+        const HOME_LANG = ((navigator.language || "es").slice(0, 2).toLowerCase()) || "es";
+        // Idioma alterno fijo para el botón "↺ traducir al...": siempre
+        // alterna entre español e inglés, sin importar cuál sea HOME_LANG.
+        const OTHER_LANG = HOME_LANG === "en" ? "es" : "en";
 
         GM_addStyle(`
           .mml-tr-icon {
@@ -64,21 +66,57 @@
             margin-bottom: 4px;
           }
           .mml-tr-bubble .mml-tr-text { word-break: break-word; }
-          .mml-tr-bubble small {
-            display: block;
-            opacity: .6;
-            font-size: 11px;
-            margin-top: 6px;
+          .mml-tr-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
           }
-          .mml-tr-swap {
-            display: inline-block;
-            margin-left: 6px;
+          .mml-tr-actions span {
             opacity: .75;
             text-decoration: underline;
             cursor: pointer;
+            font-size: 11px;
           }
-          .mml-tr-swap:hover { opacity: 1; }
+          .mml-tr-actions span:hover { opacity: 1; }
+          .mml-tr-bubble small {
+            display: block;
+            opacity: .55;
+            font-size: 10.5px;
+            margin-top: 6px;
+          }
         `);
+
+        // Nombres legibles para los idiomas más comunes; si no está en la
+        // lista, se muestra el código tal cual (ej: "ja", "ko").
+        const LANG_NAMES = {
+          es: "español", en: "inglés", pt: "portugués", fr: "francés",
+          de: "alemán", it: "italiano", nl: "neerlandés", ru: "ruso",
+          ja: "japonés", ko: "coreano", zh: "chino", zh_cn: "chino",
+          ar: "árabe", hi: "hindi", tr: "turco", pl: "polaco",
+          sv: "sueco", el: "griego", he: "hebreo", id: "indonesio"
+        };
+        const langName = (code) => LANG_NAMES[code?.toLowerCase()] || code;
+
+        // Locales para la síntesis de voz (SpeechSynthesis pide BCP-47,
+        // no solo el código de 2 letras que usa Google Translate).
+        const SPEECH_LOCALES = {
+          es: "es-ES", en: "en-US", pt: "pt-PT", fr: "fr-FR",
+          de: "de-DE", it: "it-IT", nl: "nl-NL", ru: "ru-RU",
+          ja: "ja-JP", ko: "ko-KR", zh: "zh-CN", ar: "ar-SA",
+          hi: "hi-IN", tr: "tr-TR", pl: "pl-PL", sv: "sv-SE",
+          el: "el-GR", he: "he-IL", id: "id-ID"
+        };
+
+        const speak = (text, langCode) => {
+          try {
+            if (!window.speechSynthesis) return;
+            window.speechSynthesis.cancel(); // corta cualquier lectura anterior
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = SPEECH_LOCALES[langCode] || langCode;
+            window.speechSynthesis.speak(utter);
+          } catch {}
+        };
 
         // ---------- Traducción (Google Translate, endpoint público) ----------
         const translate = (text, targetLang) => new Promise((resolve, reject) => {
@@ -88,9 +126,8 @@
             try {
               const data = JSON.parse(res.responseText);
               const translated = (data[0] || []).map((seg) => seg[0]).join("");
-              const detected = data[2] || "?";
               if (!translated) throw new Error("Respuesta vacía");
-              resolve({ translated, detected });
+              resolve({ translated });
             } catch (err) {
               reject(err);
             }
@@ -113,21 +150,9 @@
           }
         });
 
-        // Nombres legibles para los idiomas más comunes; si no está en la
-        // lista, se muestra el código tal cual (ej: "ja", "ko").
-        const LANG_NAMES = {
-          es: "español", en: "inglés", pt: "portugués", fr: "francés",
-          de: "alemán", it: "italiano", nl: "neerlandés", ru: "ruso",
-          ja: "japonés", ko: "coreano", zh: "chino", zh_cn: "chino",
-          ar: "árabe", hi: "hindi", tr: "turco", pl: "polaco",
-          sv: "sueco", el: "griego", he: "hebreo", id: "indonesio"
-        };
-        const langName = (code) => LANG_NAMES[code?.toLowerCase()] || code;
-
         // ---------- UI flotante ----------
         let icon = null;
         let bubble = null;
-        let selectedText = "";
 
         const removeIcon = () => { icon?.remove(); icon = null; };
         const removeBubble = () => { bubble?.remove(); bubble = null; };
@@ -135,7 +160,6 @@
 
         const showIcon = (rect, text) => {
           removeAll();
-          selectedText = text;
 
           icon = document.createElement("div");
           icon.className = "mml-tr-icon";
@@ -178,33 +202,34 @@
           bubble.onclick = removeAll;
         };
 
-        const runTranslation = async (text, targetLang, isRetry) => {
-          if (!isRetry) showLoading();
+        const escapeHtml = (s) => String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+        // Siempre traduce el texto seleccionado AL idioma pedido, sin
+        // importar en qué idioma esté el original (si ya está en ese
+        // idioma, Google devuelve el mismo texto — y eso está bien).
+        const runTranslation = async (text, targetLang) => {
+          showLoading();
           try {
-            const { translated, detected } = await translate(text, targetLang);
+            const { translated } = await translate(text, targetLang);
             if (!bubble) return; // se cerró mientras esperaba
 
-            // El texto ya estaba en el idioma pedido (traducción "de más"):
-            // en vez de mostrarlo sin cambios, reintenta directo contra el
-            // idioma alternativo y avisa a qué idioma se tradujo.
-            if (detected === targetLang && !isRetry) {
-              GM_setValue(LS_KEY, FALLBACK_LANG);
-              return runTranslation(text, FALLBACK_LANG, true);
-            }
-
-            const nextTarget = detected === targetLang ? FALLBACK_LANG : detected;
+            const swapTo = targetLang === OTHER_LANG ? HOME_LANG : OTHER_LANG;
 
             bubble.innerHTML = `
               <span class="mml-tr-lang">🌐 Traducción al ${escapeHtml(langName(targetLang))}</span>
               <span class="mml-tr-text">${escapeHtml(translated)}</span>
-              <small>
-                Click para copiar
-                <span class="mml-tr-swap" data-lang="${escapeHtml(nextTarget)}">↺ traducir al ${escapeHtml(langName(nextTarget))}</span>
-              </small>
+              <div class="mml-tr-actions">
+                <span class="mml-tr-swap" data-lang="${escapeHtml(swapTo)}">↺ traducir al ${escapeHtml(langName(swapTo))}</span>
+                <span class="mml-tr-speak">🔊 Escuchar</span>
+              </div>
+              <small>Click para copiar</small>
             `;
 
             bubble.onclick = async (e) => {
-              if (e.target.closest(".mml-tr-swap")) return; // manejado aparte
+              if (e.target.closest(".mml-tr-swap, .mml-tr-speak")) return; // manejados aparte
               try {
                 await navigator.clipboard.writeText(translated);
                 bubble.innerHTML = "✅ Copiado";
@@ -218,15 +243,15 @@
               GM_setValue(LS_KEY, lang);
               runTranslation(text, lang);
             });
+
+            bubble.querySelector(".mml-tr-speak")?.addEventListener("click", (e) => {
+              e.stopPropagation();
+              speak(translated, targetLang);
+            });
           } catch {
             showError();
           }
         };
-
-        const escapeHtml = (s) => String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
 
         // ---------- Detección de selección ----------
         const onSelectionUp = (e) => {
@@ -277,6 +302,7 @@
           document.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("scroll", onScrollOrResize, true);
           window.removeEventListener("resize", onScrollOrResize);
+          try { window.speechSynthesis?.cancel(); } catch {}
           removeAll();
           this.active = false;
         };
