@@ -18,12 +18,12 @@
           #mml-hz-wrap {
             position: fixed;
             top: 50%;
-            right: 20px;
             transform: translateY(-50%);
             max-height: 88vh;
             max-width: 42vw;
             z-index: 2147483647;
             display: none;
+            pointer-events: none;
           }
           #mml-hz-preview {
             display: block;
@@ -226,6 +226,23 @@
         };
 
         let lastUrl = "";
+        let lastSide = ""; // "left" | "right" — evita reescribir el style si no cambió
+
+        // Pone el panel del lado contrario al cursor: si estás mirando
+        // imágenes pegadas a la derecha, el panel aparece a la izquierda
+        // (y viceversa), para que nunca tape a la miniatura siguiente.
+        const positionPanel = (clientX) => {
+          const side = clientX > window.innerWidth / 2 ? "left" : "right";
+          if (side === lastSide) return;
+          lastSide = side;
+          if (side === "left") {
+            wrap.style.left = "20px";
+            wrap.style.right = "auto";
+          } else {
+            wrap.style.right = "20px";
+            wrap.style.left = "auto";
+          }
+        };
 
         // En vez de depender de mouseover/mouseout (que a veces no disparan
         // bien: scroll rápido, elementos que se re-renderizan, overlays,
@@ -263,6 +280,7 @@
             panel.src = url;
             resetState(); // imagen nueva: arrancar sin rotación/volteo previo
           }
+          positionPanel(e.clientX);
           wrap.style.display = "block";
         };
 
