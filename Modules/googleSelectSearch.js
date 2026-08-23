@@ -191,14 +191,26 @@
 
         const frameLoading = document.createElement("div");
         frameLoading.id = "mml-gs-frame-loading";
-        frameLoading.innerHTML = '<div class="mml-gs-spinner"></div><span>Cargando resultados…</span>';
+        const frameLoadingSpinner = document.createElement("div");
+        frameLoadingSpinner.className = "mml-gs-spinner";
+        const frameLoadingText = document.createElement("span");
+        frameLoadingText.textContent = "Cargando resultados…";
+        frameLoading.appendChild(frameLoadingSpinner);
+        frameLoading.appendChild(frameLoadingText);
         frameWrap.appendChild(frameLoading);
 
         box.appendChild(frameWrap);
 
         const resizeHandle = document.createElement("div");
         resizeHandle.id = "mml-gs-resize-handle";
-        resizeHandle.innerHTML = '<svg viewBox="0 0 16 16"><path fill="#0078D7" d="M15 15h-3v-2h3v2zm0-5h-3V8h3v2zm-5 5H7v-2h3v2zm0-5H7V8h3v2zm-5 5H2v-2h3v2z"/></svg>';
+        const SVG_NS = "http://www.w3.org/2000/svg";
+        const resizeSvg = document.createElementNS(SVG_NS, "svg");
+        resizeSvg.setAttribute("viewBox", "0 0 16 16");
+        const resizePath = document.createElementNS(SVG_NS, "path");
+        resizePath.setAttribute("fill", "#0078D7");
+        resizePath.setAttribute("d", "M15 15h-3v-2h3v2zm0-5h-3V8h3v2zm-5 5H7v-2h3v2zm0-5H7V8h3v2zm-5 5H2v-2h3v2z");
+        resizeSvg.appendChild(resizePath);
+        resizeHandle.appendChild(resizeSvg);
         box.appendChild(resizeHandle);
 
         document.body.appendChild(box);
