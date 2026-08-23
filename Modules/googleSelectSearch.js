@@ -39,6 +39,7 @@
         GM_addStyle(`
           #mml-gs-icon {
             position: absolute;
+            box-sizing: border-box;
             width: 30px;
             height: 30px;
             cursor: pointer;
