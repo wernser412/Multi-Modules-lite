@@ -6,7 +6,7 @@
     name: "imageHoverZoom",
     mod: {
       title: "🔍 Image Hover Zoom",
-      desc: "Vista previa ampliada de cualquier imagen al pasar el mouse",
+      desc: "Vista previa ampliada de cualquier imagen al pasar el mouse, con botones para rotar y voltear",
       category: "General",
 
       enable() {
@@ -14,26 +14,147 @@
         if (this.active) return;
         this.active = true;
 
+        GM_addStyle(`
+          #mml-hz-wrap {
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            max-height: 88vh;
+            max-width: 42vw;
+            z-index: 2147483647;
+            display: none;
+          }
+          #mml-hz-preview {
+            display: block;
+            max-height: 88vh;
+            max-width: 42vw;
+            border-radius: 12px;
+            box-shadow: 0 0 40px rgba(0,0,0,.85);
+            background: #000;
+            object-fit: contain;
+            pointer-events: none;
+            transition: transform .15s ease;
+          }
+          #mml-hz-toolbar {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 4px;
+            background: rgba(20,20,20,.85);
+            backdrop-filter: blur(4px);
+            padding: 5px;
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,.4);
+            pointer-events: auto;
+            opacity: 0;
+            transition: opacity .15s ease;
+          }
+          #mml-hz-wrap:hover #mml-hz-toolbar,
+          #mml-hz-toolbar.mml-hz-pinned { opacity: 1; }
+          #mml-hz-toolbar button {
+            box-sizing: border-box;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 7px;
+            background: rgba(255,255,255,.08);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            line-height: 1;
+          }
+          #mml-hz-toolbar button:hover { background: rgba(255,255,255,.22); }
+          #mml-hz-toolbar button.mml-hz-active { background: #4285F4; }
+        `);
+
+        // ---------- Estructura: wrap (posiciona) > img + toolbar ----------
+        const wrap = document.createElement("div");
+        wrap.id = "mml-hz-wrap";
+
         const panel = document.createElement("img");
-        panel.id = "mml-hover-zoom-preview";
+        panel.id = "mml-hz-preview";
+        wrap.appendChild(panel);
 
-        Object.assign(panel.style, {
-          position: "fixed",
-          top: "50%",
-          right: "20px",
-          transform: "translateY(-50%)",
-          maxHeight: "88vh",
-          maxWidth: "42vw",
-          zIndex: 2147483647,
-          borderRadius: "12px",
-          boxShadow: "0 0 40px rgba(0,0,0,.85)",
-          background: "#000",
-          display: "none",
-          pointerEvents: "none",
-          objectFit: "contain"
+        // Botón helper: crea un botón del toolbar sin usar innerHTML (evita
+        // choques con Trusted Types en sitios con CSP estricto, ej. YouTube).
+        const makeBtn = (label, title) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = label;
+          b.title = title;
+          return b;
+        };
+
+        const toolbar = document.createElement("div");
+        toolbar.id = "mml-hz-toolbar";
+
+        const btnRotateLeft = makeBtn("⟲", "Rotar 90° a la izquierda");
+        const btnRotateRight = makeBtn("⟳", "Rotar 90° a la derecha");
+        const btnFlipH = makeBtn("⇋", "Voltear horizontal");
+        const btnFlipV = makeBtn("⇕", "Voltear vertical");
+        const btnPin = makeBtn("📌", "Mantener siempre visible el toolbar");
+        const btnReset = makeBtn("↺", "Restablecer");
+
+        toolbar.append(btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV, btnPin, btnReset);
+        wrap.appendChild(toolbar);
+
+        document.documentElement.appendChild(wrap);
+
+        // ---------- Estado de transformación ----------
+        const state = { rot: 0, flipH: false, flipV: false, pinned: false };
+
+        const applyTransform = () => {
+          panel.style.transform =
+            `rotate(${state.rot}deg) scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
+        };
+
+        const resetState = () => {
+          state.rot = 0;
+          state.flipH = false;
+          state.flipV = false;
+          btnFlipH.classList.remove("mml-hz-active");
+          btnFlipV.classList.remove("mml-hz-active");
+          applyTransform();
+        };
+
+        btnRotateLeft.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.rot = (state.rot - 90) % 360;
+          applyTransform();
         });
-
-        document.documentElement.appendChild(panel);
+        btnRotateRight.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.rot = (state.rot + 90) % 360;
+          applyTransform();
+        });
+        btnFlipH.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.flipH = !state.flipH;
+          btnFlipH.classList.toggle("mml-hz-active", state.flipH);
+          applyTransform();
+        });
+        btnFlipV.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.flipV = !state.flipV;
+          btnFlipV.classList.toggle("mml-hz-active", state.flipV);
+          applyTransform();
+        });
+        btnPin.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.pinned = !state.pinned;
+          btnPin.classList.toggle("mml-hz-active", state.pinned);
+          toolbar.classList.toggle("mml-hz-pinned", state.pinned);
+        });
+        btnReset.addEventListener("click", (e) => {
+          e.stopPropagation();
+          resetState();
+        });
 
         // Misma lógica de extracción que imageTooltip.js: sirve para
         // imágenes normales, lazy-load (data-src/data-original), <image>
@@ -112,14 +233,17 @@
         // realmente bajo el cursor. Así el panel nunca queda "pegado":
         // si no hay imagen debajo, se oculta sí o sí en ese mismo movimiento.
         const onMove = (e) => {
-          if (e.target === panel) return;
+          // Si el cursor está sobre nuestro propio panel/toolbar, no tocar
+          // nada: así se puede mover el mouse hacia los botones sin que el
+          // preview se oculte a mitad de camino.
+          if (wrap.contains(e.target)) return;
 
           const el = e.target.closest?.("img, image, [style*='background-image']");
 
           if (!el || isTooSmall(el)) {
-            if (lastUrl) {
+            if (lastUrl && !state.pinned) {
               lastUrl = "";
-              panel.style.display = "none";
+              wrap.style.display = "none";
             }
             return;
           }
@@ -127,9 +251,9 @@
           const url = extract(el);
 
           if (!url) {
-            if (lastUrl) {
+            if (lastUrl && !state.pinned) {
               lastUrl = "";
-              panel.style.display = "none";
+              wrap.style.display = "none";
             }
             return;
           }
@@ -137,15 +261,17 @@
           if (url !== lastUrl) {
             lastUrl = url;
             panel.src = url;
+            resetState(); // imagen nueva: arrancar sin rotación/volteo previo
           }
-          panel.style.display = "block";
+          wrap.style.display = "block";
         };
 
-        // Si el cursor sale de la ventana, también se oculta.
+        // Si el cursor sale de la ventana, también se oculta (salvo que el
+        // toolbar esté fijado con 📌).
         const onLeaveWindow = (e) => {
-          if (!e.relatedTarget && !e.toElement) {
+          if ((!e.relatedTarget && !e.toElement) && !state.pinned) {
             lastUrl = "";
-            panel.style.display = "none";
+            wrap.style.display = "none";
           }
         };
 
@@ -155,7 +281,7 @@
         this._cleanup = () => {
           document.removeEventListener("mousemove", onMove, true);
           document.removeEventListener("mouseout", onLeaveWindow, true);
-          panel.remove();
+          wrap.remove();
           this.active = false;
         };
       },
