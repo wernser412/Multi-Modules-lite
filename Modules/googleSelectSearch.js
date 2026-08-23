@@ -46,14 +46,17 @@
             background: #fff;
             border-radius: 50%;
             box-shadow: 0 3px 10px rgba(0,0,0,.25);
-            padding: 6px;
             display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
             z-index: 2147483000;
             opacity: 0;
             transform: scale(.7);
             transition: opacity .15s ease, transform .15s ease;
+            user-select: none;
           }
-          #mml-gs-icon.mml-gs-visible { display: block; opacity: 1; transform: scale(1); }
+          #mml-gs-icon.mml-gs-visible { display: flex; opacity: 1; transform: scale(1); }
           #mml-gs-icon:hover { transform: scale(1.12); }
 
           #mml-gs-box {
@@ -133,6 +136,22 @@
           }
           @keyframes mml-gs-spin { to { transform: rotate(360deg); } }
 
+          #mml-gs-frame-blocked {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 20px;
+            text-align: center;
+            color: #444;
+            font-size: 12.5px;
+            background: #f4f4f4;
+          }
+          #mml-gs-frame-blocked small { opacity: .7; font-size: 11px; }
+
           #mml-gs-resize-handle {
             position: absolute;
             width: 16px;
@@ -147,9 +166,13 @@
         `);
 
         // ---------- Construcción de la UI ----------
-        const icon = document.createElement("img");
+        // Antes era un <img src="https://www.google.com/favicon.ico">, pero
+        // cargar una imagen de un dominio externo choca con el img-src de
+        // sitios con CSP estricto (ej: GitHub). Un emoji no depende de
+        // ningún recurso de red, así que nunca puede ser bloqueado.
+        const icon = document.createElement("div");
         icon.id = "mml-gs-icon";
-        icon.src = "https://www.google.com/favicon.ico";
+        icon.textContent = "🔍";
         icon.title = "Buscar en Google";
         document.body.appendChild(icon);
 
@@ -200,6 +223,23 @@
         frameLoading.appendChild(frameLoadingText);
         frameWrap.appendChild(frameLoading);
 
+        // Aviso que se muestra cuando el propio sitio bloquea, vía su
+        // Content-Security-Policy (frame-src), que incrustemos Google
+        // dentro de un iframe. Esto no lo podemos evitar desde el script
+        // (es una restricción del navegador aplicada por el servidor del
+        // sitio), así que en vez de dejar el cuadro en blanco avisamos y
+        // dejamos a mano el botón de abrir en pestaña nueva.
+        const frameBlocked = document.createElement("div");
+        frameBlocked.id = "mml-gs-frame-blocked";
+        frameBlocked.style.display = "none";
+        const frameBlockedText = document.createElement("span");
+        frameBlockedText.textContent = "⚠️ Este sitio no permite mostrar Google aquí dentro.";
+        const frameBlockedHint = document.createElement("small");
+        frameBlockedHint.textContent = "Usa el botón ↗ de arriba para abrirlo en una pestaña nueva.";
+        frameBlocked.appendChild(frameBlockedText);
+        frameBlocked.appendChild(frameBlockedHint);
+        frameWrap.appendChild(frameBlocked);
+
         box.appendChild(frameWrap);
 
         const resizeHandle = document.createElement("div");
@@ -223,6 +263,7 @@
         };
 
         const showBox = (query) => {
+          frameBlocked.style.display = "none";
           frameLoading.style.opacity = "1";
           frame.dataset.query = query;
           frame.src = `https://www.google.com/search?igu=1&q=${query}`;
@@ -234,6 +275,21 @@
 
         const onFrameLoad = () => { frameLoading.style.opacity = "0"; };
         frame.addEventListener("load", onFrameLoad);
+
+        // El navegador dispara este evento en el `document` justo cuando
+        // bloquea algo por CSP — incluyendo el framing de google.com si el
+        // sitio no lo permite en su directiva frame-src/child-src. Es la
+        // única forma confiable de detectarlo (no podemos leer el contenido
+        // del iframe por política de mismo origen, y el iframe igual puede
+        // disparar "load" aunque haya sido bloqueado).
+        const onCspViolation = (e) => {
+          const directive = e.violatedDirective || e.effectiveDirective || "";
+          if (!directive.includes("frame-src") && !directive.includes("child-src")) return;
+          if (!(e.blockedURI || "").includes("google.com")) return;
+          frameLoading.style.opacity = "0";
+          frameBlocked.style.display = "flex";
+        };
+        document.addEventListener("securitypolicyviolation", onCspViolation);
 
         closeBtn.addEventListener("click", hideBox);
 
@@ -386,6 +442,7 @@
         this._cleanup = () => {
           document.removeEventListener("mouseup", onTextSelect);
           document.removeEventListener("keydown", onKeyDown);
+          document.removeEventListener("securitypolicyviolation", onCspViolation);
           window.removeEventListener("resize", onWindowResize);
           frame.removeEventListener("load", onFrameLoad);
           icon.remove();
