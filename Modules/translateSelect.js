@@ -186,11 +186,25 @@
           bubble.style.left = `${Math.max(left, 4)}px`;
         };
 
+        // Helper genérico para crear nodos sin tocar innerHTML nunca
+        // (algunas webs como YouTube exigen Trusted Types vía CSP y
+        // bloquean cualquier asignación de innerHTML con un string,
+        // aunque sea texto plano armado por nosotros mismos).
+        const el = (tag, { className, text, attrs } = {}) => {
+          const node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text !== undefined) node.textContent = text;
+          if (attrs) for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+          return node;
+        };
+
+        const clearNode = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
+
         const showLoading = () => {
           removeBubble();
           bubble = document.createElement("div");
           bubble.className = "mml-tr-bubble";
-          bubble.innerHTML = `<span class="mml-tr-text">Traduciendo…</span>`;
+          bubble.appendChild(el("span", { className: "mml-tr-text", text: "Traduciendo…" }));
           bubble.addEventListener("mousedown", (e) => e.preventDefault());
           document.body.appendChild(bubble);
           positionBubble();
@@ -198,14 +212,11 @@
 
         const showError = () => {
           if (!bubble) return;
-          bubble.innerHTML = `<span class="mml-tr-text">⚠️ No se pudo traducir</span><small>Click para cerrar</small>`;
+          clearNode(bubble);
+          bubble.appendChild(el("span", { className: "mml-tr-text", text: "⚠️ No se pudo traducir" }));
+          bubble.appendChild(el("small", { text: "Click para cerrar" }));
           bubble.onclick = removeAll;
         };
-
-        const escapeHtml = (s) => String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
 
         // Siempre traduce el texto seleccionado AL idioma pedido, sin
         // importar en qué idioma esté el original (si ya está en ese
@@ -218,33 +229,38 @@
 
             const swapTo = targetLang === OTHER_LANG ? HOME_LANG : OTHER_LANG;
 
-            bubble.innerHTML = `
-              <span class="mml-tr-lang">🌐 Traducción al ${escapeHtml(langName(targetLang))}</span>
-              <span class="mml-tr-text">${escapeHtml(translated)}</span>
-              <div class="mml-tr-actions">
-                <span class="mml-tr-swap" data-lang="${escapeHtml(swapTo)}">↺ traducir al ${escapeHtml(langName(swapTo))}</span>
-                <span class="mml-tr-speak">🔊 Escuchar</span>
-              </div>
-              <small>Click para copiar</small>
-            `;
+            clearNode(bubble);
+            bubble.appendChild(el("span", { className: "mml-tr-lang", text: `🌐 Traducción al ${langName(targetLang)}` }));
+            bubble.appendChild(el("span", { className: "mml-tr-text", text: translated }));
+
+            const actions = el("div", { className: "mml-tr-actions" });
+            const swapBtn = el("span", { className: "mml-tr-swap", text: `↺ traducir al ${langName(swapTo)}` });
+            swapBtn.dataset.lang = swapTo;
+            const speakBtn = el("span", { className: "mml-tr-speak", text: "🔊 Escuchar" });
+            actions.appendChild(swapBtn);
+            actions.appendChild(speakBtn);
+            bubble.appendChild(actions);
+
+            bubble.appendChild(el("small", { text: "Click para copiar" }));
 
             bubble.onclick = async (e) => {
               if (e.target.closest(".mml-tr-swap, .mml-tr-speak")) return; // manejados aparte
               try {
                 await navigator.clipboard.writeText(translated);
-                bubble.innerHTML = "✅ Copiado";
+                clearNode(bubble);
+                bubble.appendChild(el("span", { text: "✅ Copiado" }));
                 setTimeout(removeAll, 700);
               } catch {}
             };
 
-            bubble.querySelector(".mml-tr-swap")?.addEventListener("click", (e) => {
+            swapBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               const lang = e.currentTarget.dataset.lang;
               GM_setValue(LS_KEY, lang);
               runTranslation(text, lang);
             });
 
-            bubble.querySelector(".mml-tr-speak")?.addEventListener("click", (e) => {
+            speakBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               speak(translated, targetLang);
             });
