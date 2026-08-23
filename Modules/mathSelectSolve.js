@@ -376,7 +376,12 @@
 
           bubble = document.createElement("div");
           bubble.className = "mml-math-bubble";
-          bubble.innerHTML = `${text}<small>${copyLabel}</small>`;
+          const resultText = document.createElement("span");
+          resultText.textContent = text;
+          const resultSmall = document.createElement("small");
+          resultSmall.textContent = copyLabel;
+          bubble.appendChild(resultText);
+          bubble.appendChild(resultSmall);
 
           const iconRect = icon?.getBoundingClientRect();
           const top = iconRect ? iconRect.bottom + 6 : 20;
@@ -391,7 +396,7 @@
             if (!values.length) return;
             try {
               await navigator.clipboard.writeText(values.join("\n"));
-              bubble.innerHTML = "✅ Copiado";
+              bubble.textContent = "✅ Copiado";
               setTimeout(removeAll, 700);
             } catch {}
           });
