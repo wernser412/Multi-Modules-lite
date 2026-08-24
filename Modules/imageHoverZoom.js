@@ -37,39 +37,36 @@
             transition: transform .15s ease;
           }
           #mml-hz-toolbar {
-            position: absolute;
-            top: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            display: none;
+            align-items: center;
             gap: 4px;
-            background: rgba(20,20,20,.85);
-            backdrop-filter: blur(4px);
-            padding: 5px;
-            border-radius: 10px;
-            box-shadow: 0 4px 14px rgba(0,0,0,.4);
-            pointer-events: auto;
-            opacity: 0;
-            transition: opacity .15s ease;
+            background: #14161a;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 999px;
+            padding: 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.45);
+            z-index: 2147483647;
           }
-          #mml-hz-wrap:hover #mml-hz-toolbar,
-          #mml-hz-toolbar.mml-hz-pinned { opacity: 1; }
+          #mml-hz-toolbar.mml-hz-open { display: flex; }
           #mml-hz-toolbar button {
             box-sizing: border-box;
-            width: 28px;
-            height: 28px;
+            width: 30px;
+            height: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
             border: none;
-            border-radius: 7px;
+            border-radius: 999px;
             background: rgba(255,255,255,.08);
-            color: #fff;
+            color: #eee;
             font-size: 14px;
             cursor: pointer;
             line-height: 1;
           }
-          #mml-hz-toolbar button:hover { background: rgba(255,255,255,.22); }
+          #mml-hz-toolbar button:hover { background: rgba(255,255,255,.2); }
           #mml-hz-toolbar button.mml-hz-active { background: #4285F4; }
         `);
 
@@ -102,7 +99,7 @@
         const btnReset = makeBtn("↺", "Restablecer");
 
         toolbar.append(btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV, btnPin, btnReset);
-        wrap.appendChild(toolbar);
+        document.documentElement.appendChild(toolbar);
 
         document.documentElement.appendChild(wrap);
 
@@ -149,7 +146,6 @@
           e.stopPropagation();
           state.pinned = !state.pinned;
           btnPin.classList.toggle("mml-hz-active", state.pinned);
-          toolbar.classList.toggle("mml-hz-pinned", state.pinned);
         });
         btnReset.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -227,6 +223,29 @@
 
         let lastUrl = "";
         let lastSide = ""; // "left" | "right" — evita reescribir el style si no cambió
+        let hideTimer = null;
+
+        const cancelHide = () => {
+          if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+          }
+        };
+
+        // No se oculta al instante: da un pequeño margen para que el mouse
+        // pueda cruzar la pantalla (desde la miniatura hasta el panel, que
+        // puede estar del lado contrario) sin que desaparezca a mitad de
+        // camino. Si en ese lapso vuelve a pasar sobre una imagen válida o
+        // sobre el propio panel, se cancela el ocultamiento.
+        const scheduleHide = () => {
+          if (!lastUrl || state.pinned) return;
+          cancelHide();
+          hideTimer = setTimeout(() => {
+            lastUrl = "";
+            wrap.style.display = "none";
+            toolbar.classList.remove("mml-hz-open");
+          }, 350);
+        };
 
         // Pone el panel del lado contrario al cursor: si estás mirando
         // imágenes pegadas a la derecha, el panel aparece a la izquierda
@@ -250,30 +269,30 @@
         // realmente bajo el cursor. Así el panel nunca queda "pegado":
         // si no hay imagen debajo, se oculta sí o sí en ese mismo movimiento.
         const onMove = (e) => {
-          // Si el cursor está sobre nuestro propio panel/toolbar, no tocar
-          // nada: así se puede mover el mouse hacia los botones sin que el
-          // preview se oculte a mitad de camino.
-          if (wrap.contains(e.target)) return;
+          // Si el cursor está sobre nuestro propio panel o el toolbar
+          // (que ahora vive fijo abajo a la izquierda, separado del panel),
+          // no tocar nada: se puede ir hasta los botones sin que el
+          // preview se oculte en el camino.
+          if (wrap.contains(e.target) || toolbar.contains(e.target)) {
+            cancelHide();
+            return;
+          }
 
           const el = e.target.closest?.("img, image, [style*='background-image']");
 
           if (!el || isTooSmall(el)) {
-            if (lastUrl && !state.pinned) {
-              lastUrl = "";
-              wrap.style.display = "none";
-            }
+            scheduleHide();
             return;
           }
 
           const url = extract(el);
 
           if (!url) {
-            if (lastUrl && !state.pinned) {
-              lastUrl = "";
-              wrap.style.display = "none";
-            }
+            scheduleHide();
             return;
           }
+
+          cancelHide();
 
           if (url !== lastUrl) {
             lastUrl = url;
@@ -282,15 +301,13 @@
           }
           positionPanel(e.clientX);
           wrap.style.display = "block";
+          toolbar.classList.add("mml-hz-open");
         };
 
         // Si el cursor sale de la ventana, también se oculta (salvo que el
         // toolbar esté fijado con 📌).
         const onLeaveWindow = (e) => {
-          if ((!e.relatedTarget && !e.toElement) && !state.pinned) {
-            lastUrl = "";
-            wrap.style.display = "none";
-          }
+          if ((!e.relatedTarget && !e.toElement)) scheduleHide();
         };
 
         document.addEventListener("mousemove", onMove, true);
@@ -299,7 +316,9 @@
         this._cleanup = () => {
           document.removeEventListener("mousemove", onMove, true);
           document.removeEventListener("mouseout", onLeaveWindow, true);
+          cancelHide();
           wrap.remove();
+          toolbar.remove();
           this.active = false;
         };
       },
