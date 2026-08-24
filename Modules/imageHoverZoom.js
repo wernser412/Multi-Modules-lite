@@ -46,6 +46,12 @@
             pointer-events: none;
             transition: transform .15s ease;
           }
+          #mml-hz-preview.mml-hz-pannable {
+            pointer-events: auto;
+            cursor: grab;
+            transition: none;
+          }
+          #mml-hz-preview.mml-hz-pannable.mml-hz-panning { cursor: grabbing; }
           #mml-hz-toolbar {
             position: fixed;
             z-index: 2147483647;
@@ -70,6 +76,11 @@
           }
           #mml-hz-fab.mml-hz-dragging { cursor: grabbing; }
           #mml-hz-fab.mml-hz-active { background: #4285F4; }
+          #mml-hz-fab span {
+            display: inline-block;
+            transition: transform .15s ease;
+          }
+          #mml-hz-fab.mml-hz-active span { transform: rotate(180deg); }
           #mml-hz-row {
             position: absolute;
             top: 0;
@@ -136,7 +147,9 @@
         const fab = document.createElement("button");
         fab.id = "mml-hz-fab";
         fab.type = "button";
-        fab.textContent = "🖼️";
+        const fabIcon = document.createElement("span");
+        fabIcon.textContent = "▶";
+        fab.appendChild(fabIcon);
         fab.title = "Controles de zoom (arrastrar para mover)";
 
         const row = document.createElement("div");
@@ -166,11 +179,14 @@
         document.documentElement.appendChild(toolbar);
 
         // ---------- Estado de transformación de la imagen ----------
-        const state = { rot: 0, flipH: false, flipV: false, zoom: 1, pinned: false };
+        const state = { rot: 0, flipH: false, flipV: false, zoom: 1, pinned: false, panX: 0, panY: 0 };
 
         const applyTransform = () => {
+          // translate va primero (fuera) para que se mueva en píxeles de
+          // pantalla "reales", sin importar cuánto zoom/rotación tenga
+          // aplicado encima — así el arrastre se siente 1:1 con el mouse.
           panel.style.transform =
-            `rotate(${state.rot}deg) scale(${state.zoom * (state.flipH ? -1 : 1)}, ${state.zoom * (state.flipV ? -1 : 1)})`;
+            `translate(${state.panX}px, ${state.panY}px) rotate(${state.rot}deg) scale(${state.zoom * (state.flipH ? -1 : 1)}, ${state.zoom * (state.flipV ? -1 : 1)})`;
         };
 
         const resetState = () => {
@@ -178,6 +194,8 @@
           state.flipH = false;
           state.flipV = false;
           state.zoom = 1;
+          state.panX = 0;
+          state.panY = 0;
           btnFlipH.classList.remove("mml-hz-active");
           btnFlipV.classList.remove("mml-hz-active");
           applyTransform();
@@ -219,6 +237,7 @@
           e.stopPropagation();
           state.pinned = !state.pinned;
           btnPin.classList.toggle("mml-hz-active", state.pinned);
+          panel.classList.toggle("mml-hz-pannable", state.pinned);
         });
         btnReset.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -303,6 +322,41 @@
           setToolbarPos(r.left, r.top);
         };
         window.addEventListener("resize", onWindowResize);
+
+        // ---------- Arrastrar la imagen ampliada (pan) ----------
+        // Solo funciona con 📌 fijado: en modo hover normal el panel tiene
+        // pointer-events:none para dejar pasar el mouse hacia las
+        // miniaturas de abajo, así que no interferimos con eso.
+        let panning = false;
+        let panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0;
+
+        const onPanStart = (e) => {
+          if (!state.pinned) return;
+          panning = true;
+          panel.classList.add("mml-hz-panning");
+          panel.setPointerCapture(e.pointerId);
+          panStartX = e.clientX;
+          panStartY = e.clientY;
+          panOrigX = state.panX;
+          panOrigY = state.panY;
+          e.preventDefault();
+        };
+        const onPanMove = (e) => {
+          if (!panning) return;
+          state.panX = panOrigX + (e.clientX - panStartX);
+          state.panY = panOrigY + (e.clientY - panStartY);
+          applyTransform();
+        };
+        const onPanEnd = (e) => {
+          if (!panning) return;
+          panning = false;
+          panel.classList.remove("mml-hz-panning");
+          try { panel.releasePointerCapture(e.pointerId); } catch {}
+        };
+        panel.addEventListener("pointerdown", onPanStart);
+        panel.addEventListener("pointermove", onPanMove);
+        panel.addEventListener("pointerup", onPanEnd);
+        panel.addEventListener("pointercancel", onPanEnd);
 
         // Misma lógica de extracción que imageTooltip.js: sirve para
         // imágenes normales, lazy-load (data-src/data-original), <image>
@@ -418,6 +472,14 @@
         // realmente bajo el cursor. Así el panel nunca queda "pegado":
         // si no hay imagen debajo, se oculta sí o sí en ese mismo movimiento.
         const onMove = (e) => {
+          // Mientras se está arrastrando (pan) la imagen fijada, no evaluar
+          // nada más — el cursor puede salirse visualmente del <img> a
+          // mitad del arrastre y no debe disparar un ocultamiento.
+          if (panning) {
+            cancelHide();
+            return;
+          }
+
           // Si el cursor está sobre nuestro propio panel o el toolbar, no
           // tocar nada: se puede ir hasta los botones sin que el preview
           // se oculte en el camino.
@@ -463,6 +525,10 @@
           document.removeEventListener("mousemove", onMove, true);
           document.removeEventListener("mouseout", onLeaveWindow, true);
           window.removeEventListener("resize", onWindowResize);
+          panel.removeEventListener("pointerdown", onPanStart);
+          panel.removeEventListener("pointermove", onPanMove);
+          panel.removeEventListener("pointerup", onPanEnd);
+          panel.removeEventListener("pointercancel", onPanEnd);
           cancelHide();
           wrap.remove();
           toolbar.remove();
