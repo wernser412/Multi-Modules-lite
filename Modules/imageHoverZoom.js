@@ -6,13 +6,25 @@
     name: "imageHoverZoom",
     mod: {
       title: "🔍 Image Hover Zoom",
-      desc: "Vista previa ampliada de cualquier imagen al pasar el mouse, con botones para rotar y voltear",
+      desc: "Vista previa ampliada de cualquier imagen al pasar el mouse, con toolbar movible para rotar, voltear y hacer zoom",
       category: "General",
 
       enable() {
 
         if (this.active) return;
         this.active = true;
+
+        // ---------- Config / persistencia (por sitio) ----------
+        const SITE = location.hostname || "default";
+        const LS_KEY = {
+          x: `mml_hz_toolbar_x__${SITE}`,
+          y: `mml_hz_toolbar_y__${SITE}`,
+          scale: `mml_hz_toolbar_scale__${SITE}`
+        };
+        const DEFAULT_POS = { x: 20, y: 76 }; // desde bottom-left
+        const MIN_SCALE = 0.7;
+        const MAX_SCALE = 1.6;
+        const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
 
         GM_addStyle(`
           #mml-hz-wrap {
@@ -38,9 +50,7 @@
           }
           #mml-hz-toolbar {
             position: fixed;
-            left: 20px;
-            bottom: 76px;
-            display: none;
+            display: flex;
             align-items: center;
             gap: 4px;
             background: #14161a;
@@ -49,8 +59,11 @@
             padding: 6px;
             box-shadow: 0 8px 24px rgba(0,0,0,.45);
             z-index: 2147483647;
+            cursor: grab;
+            user-select: none;
+            transform-origin: bottom left;
           }
-          #mml-hz-toolbar.mml-hz-open { display: flex; }
+          #mml-hz-toolbar.mml-hz-dragging { cursor: grabbing; }
           #mml-hz-toolbar button {
             box-sizing: border-box;
             width: 30px;
@@ -65,21 +78,42 @@
             font-size: 14px;
             cursor: pointer;
             line-height: 1;
+            flex: none;
           }
           #mml-hz-toolbar button:hover { background: rgba(255,255,255,.2); }
           #mml-hz-toolbar button.mml-hz-active { background: #4285F4; }
+          #mml-hz-toolbar .mml-hz-sep {
+            width: 1px;
+            align-self: stretch;
+            margin: 4px 2px;
+            background: rgba(255,255,255,.1);
+            flex: none;
+          }
+          #mml-hz-toolbar .mml-hz-grip {
+            width: 16px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: nwse-resize;
+            color: #666;
+            font-size: 13px;
+            flex: none;
+            touch-action: none;
+          }
+          #mml-hz-toolbar .mml-hz-grip:hover { color: #aaa; }
         `);
 
-        // ---------- Estructura: wrap (posiciona) > img + toolbar ----------
+        // ---------- Estructura: wrap (panel de preview, se muestra al hover) ----------
         const wrap = document.createElement("div");
         wrap.id = "mml-hz-wrap";
 
         const panel = document.createElement("img");
         panel.id = "mml-hz-preview";
         wrap.appendChild(panel);
+        document.documentElement.appendChild(wrap);
 
-        // Botón helper: crea un botón del toolbar sin usar innerHTML (evita
-        // choques con Trusted Types en sitios con CSP estricto, ej. YouTube).
+        // ---------- Toolbar: persistente, siempre visible, arrastrable ----------
         const makeBtn = (label, title) => {
           const b = document.createElement("button");
           b.type = "button";
@@ -95,26 +129,38 @@
         const btnRotateRight = makeBtn("⟳", "Rotar 90° a la derecha");
         const btnFlipH = makeBtn("⇋", "Voltear horizontal");
         const btnFlipV = makeBtn("⇕", "Voltear vertical");
-        const btnPin = makeBtn("📌", "Mantener siempre visible el toolbar");
-        const btnReset = makeBtn("↺", "Restablecer");
+        const sep1 = document.createElement("div");
+        sep1.className = "mml-hz-sep";
+        const btnZoomOut = makeBtn("−", "Alejar");
+        const btnZoomIn = makeBtn("+", "Acercar");
+        const sep2 = document.createElement("div");
+        sep2.className = "mml-hz-sep";
+        const btnReset = makeBtn("↺", "Restablecer todo");
+        const grip = document.createElement("div");
+        grip.className = "mml-hz-grip";
+        grip.textContent = "⠿";
+        grip.title = "Arrastrar el borde para agrandar/achicar el toolbar";
 
-        toolbar.append(btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV, btnPin, btnReset);
+        toolbar.append(
+          btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV,
+          sep1, btnZoomOut, btnZoomIn,
+          sep2, btnReset, grip
+        );
         document.documentElement.appendChild(toolbar);
 
-        document.documentElement.appendChild(wrap);
-
-        // ---------- Estado de transformación ----------
-        const state = { rot: 0, flipH: false, flipV: false, pinned: false };
+        // ---------- Estado de transformación de la imagen ----------
+        const state = { rot: 0, flipH: false, flipV: false, zoom: 1 };
 
         const applyTransform = () => {
           panel.style.transform =
-            `rotate(${state.rot}deg) scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
+            `rotate(${state.rot}deg) scale(${state.zoom * (state.flipH ? -1 : 1)}, ${state.zoom * (state.flipV ? -1 : 1)})`;
         };
 
         const resetState = () => {
           state.rot = 0;
           state.flipH = false;
           state.flipV = false;
+          state.zoom = 1;
           btnFlipH.classList.remove("mml-hz-active");
           btnFlipV.classList.remove("mml-hz-active");
           applyTransform();
@@ -142,15 +188,110 @@
           btnFlipV.classList.toggle("mml-hz-active", state.flipV);
           applyTransform();
         });
-        btnPin.addEventListener("click", (e) => {
+        btnZoomOut.addEventListener("click", (e) => {
           e.stopPropagation();
-          state.pinned = !state.pinned;
-          btnPin.classList.toggle("mml-hz-active", state.pinned);
+          state.zoom = clamp(state.zoom - 0.25, 0.5, 4);
+          applyTransform();
+        });
+        btnZoomIn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.zoom = clamp(state.zoom + 0.25, 0.5, 4);
+          applyTransform();
         });
         btnReset.addEventListener("click", (e) => {
           e.stopPropagation();
           resetState();
         });
+
+        // ---------- Arrastrar el toolbar (posición persistida por sitio) ----------
+        const setToolbarPos = (x, y) => {
+          const w = toolbar.offsetWidth || 200;
+          const h = toolbar.offsetHeight || 42;
+          x = clamp(x, 4, window.innerWidth - w - 4);
+          y = clamp(y, 4, window.innerHeight - h - 4);
+          toolbar.style.left = `${x}px`;
+          toolbar.style.top = `${y}px`;
+          return { x, y };
+        };
+
+        // Posición guardada como distancia desde bottom-left, para que se
+        // adapte razonablemente si cambia el tamaño de ventana.
+        const savedX = Number(GM_getValue(LS_KEY.x, DEFAULT_POS.x));
+        const savedY = Number(GM_getValue(LS_KEY.y, DEFAULT_POS.y));
+        setToolbarPos(savedX, window.innerHeight - savedY - 42);
+
+        const savedScale = Number(GM_getValue(LS_KEY.scale, 1));
+        toolbar.style.transform = `scale(${clamp(savedScale, MIN_SCALE, MAX_SCALE)})`;
+
+        let dragging = false;
+        let dragStartX = 0, dragStartY = 0, dragStartLeft = 0, dragStartTop = 0;
+
+        const onDragStart = (e) => {
+          if (e.target.closest("button, .mml-hz-grip")) return; // esos tienen su propio handler
+          dragging = true;
+          toolbar.classList.add("mml-hz-dragging");
+          toolbar.setPointerCapture(e.pointerId);
+          dragStartX = e.clientX;
+          dragStartY = e.clientY;
+          const r = toolbar.getBoundingClientRect();
+          dragStartLeft = r.left;
+          dragStartTop = r.top;
+        };
+        const onDragMove = (e) => {
+          if (!dragging) return;
+          const pos = setToolbarPos(
+            dragStartLeft + (e.clientX - dragStartX),
+            dragStartTop + (e.clientY - dragStartY)
+          );
+          GM_setValue(LS_KEY.x, pos.x);
+          GM_setValue(LS_KEY.y, window.innerHeight - pos.y - toolbar.offsetHeight);
+        };
+        const onDragEnd = (e) => {
+          if (!dragging) return;
+          dragging = false;
+          toolbar.classList.remove("mml-hz-dragging");
+          try { toolbar.releasePointerCapture(e.pointerId); } catch {}
+        };
+        toolbar.addEventListener("pointerdown", onDragStart);
+        toolbar.addEventListener("pointermove", onDragMove);
+        toolbar.addEventListener("pointerup", onDragEnd);
+        toolbar.addEventListener("pointercancel", onDragEnd);
+
+        // ---------- "Estirar" el toolbar: el grip escala todo el bloque ----------
+        let resizing = false;
+        let resizeStartX = 0, resizeStartScale = 1;
+
+        const onResizeStart = (e) => {
+          e.stopPropagation();
+          resizing = true;
+          resizeStartX = e.clientX;
+          resizeStartScale = clamp(Number(GM_getValue(LS_KEY.scale, 1)), MIN_SCALE, MAX_SCALE);
+          grip.setPointerCapture(e.pointerId);
+        };
+        const onResizeMove = (e) => {
+          if (!resizing) return;
+          const delta = (e.clientX - resizeStartX) / 200; // sensibilidad
+          const newScale = clamp(resizeStartScale + delta, MIN_SCALE, MAX_SCALE);
+          toolbar.style.transform = `scale(${newScale})`;
+          GM_setValue(LS_KEY.scale, newScale);
+        };
+        const onResizeEnd = (e) => {
+          if (!resizing) return;
+          resizing = false;
+          try { grip.releasePointerCapture(e.pointerId); } catch {}
+        };
+        grip.addEventListener("pointerdown", onResizeStart);
+        grip.addEventListener("pointermove", onResizeMove);
+        grip.addEventListener("pointerup", onResizeEnd);
+        grip.addEventListener("pointercancel", onResizeEnd);
+
+        // Si cambia el tamaño de la ventana, re-clamped para que no quede
+        // fuera de pantalla.
+        const onWindowResize = () => {
+          const r = toolbar.getBoundingClientRect();
+          setToolbarPos(r.left, r.top);
+        };
+        window.addEventListener("resize", onWindowResize);
 
         // Misma lógica de extracción que imageTooltip.js: sirve para
         // imágenes normales, lazy-load (data-src/data-original), <image>
@@ -232,18 +373,15 @@
           }
         };
 
-        // No se oculta al instante: da un pequeño margen para que el mouse
-        // pueda cruzar la pantalla (desde la miniatura hasta el panel, que
-        // puede estar del lado contrario) sin que desaparezca a mitad de
-        // camino. Si en ese lapso vuelve a pasar sobre una imagen válida o
-        // sobre el propio panel, se cancela el ocultamiento.
+        // El panel de preview (no el toolbar, que ahora es siempre visible)
+        // se oculta con un pequeño margen para poder cruzar la pantalla
+        // hacia el toolbar sin que desaparezca a mitad de camino.
         const scheduleHide = () => {
-          if (!lastUrl || state.pinned) return;
+          if (!lastUrl) return;
           cancelHide();
           hideTimer = setTimeout(() => {
             lastUrl = "";
             wrap.style.display = "none";
-            toolbar.classList.remove("mml-hz-open");
           }, 350);
         };
 
@@ -269,10 +407,9 @@
         // realmente bajo el cursor. Así el panel nunca queda "pegado":
         // si no hay imagen debajo, se oculta sí o sí en ese mismo movimiento.
         const onMove = (e) => {
-          // Si el cursor está sobre nuestro propio panel o el toolbar
-          // (que ahora vive fijo abajo a la izquierda, separado del panel),
-          // no tocar nada: se puede ir hasta los botones sin que el
-          // preview se oculte en el camino.
+          // Si el cursor está sobre nuestro propio panel o el toolbar, no
+          // tocar nada: se puede ir hasta los botones sin que el preview
+          // se oculte en el camino.
           if (wrap.contains(e.target) || toolbar.contains(e.target)) {
             cancelHide();
             return;
@@ -297,17 +434,16 @@
           if (url !== lastUrl) {
             lastUrl = url;
             panel.src = url;
-            resetState(); // imagen nueva: arrancar sin rotación/volteo previo
+            resetState(); // imagen nueva: arrancar sin rotación/volteo/zoom previo
           }
           positionPanel(e.clientX);
           wrap.style.display = "block";
-          toolbar.classList.add("mml-hz-open");
         };
 
-        // Si el cursor sale de la ventana, también se oculta (salvo que el
-        // toolbar esté fijado con 📌).
+        // Si el cursor sale de la ventana, también se oculta el panel de
+        // preview (el toolbar se queda, es persistente).
         const onLeaveWindow = (e) => {
-          if ((!e.relatedTarget && !e.toElement)) scheduleHide();
+          if (!e.relatedTarget && !e.toElement) scheduleHide();
         };
 
         document.addEventListener("mousemove", onMove, true);
@@ -316,6 +452,7 @@
         this._cleanup = () => {
           document.removeEventListener("mousemove", onMove, true);
           document.removeEventListener("mouseout", onLeaveWindow, true);
+          window.removeEventListener("resize", onWindowResize);
           cancelHide();
           wrap.remove();
           toolbar.remove();
