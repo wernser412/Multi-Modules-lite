@@ -132,7 +132,6 @@
         // ---------- Panel de resultado ----------
         const panel = document.createElement("div");
         panel.id = "mml-cp-panel";
-        panel.style.position = "relative";
 
         const toast = document.createElement("div");
         toast.id = "mml-cp-toast";
@@ -273,8 +272,10 @@
             const hex = result.sRGBHex;
             showColor(hex);
             pushHistory(hex);
-          } catch {
-            // Cancelado por el usuario (Esc / click afuera) — no hacer nada.
+          } catch (err) {
+            // AbortError = el usuario canceló (Esc / click derecho). Cualquier
+            // otro error se deja ver en consola para poder diagnosticarlo.
+            if (err?.name !== "AbortError") console.error("[colorPicker]", err);
           } finally {
             fab.classList.remove("mml-cp-busy");
           }
