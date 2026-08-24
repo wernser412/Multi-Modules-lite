@@ -39,7 +39,7 @@
           #mml-hz-toolbar {
             position: fixed;
             left: 20px;
-            bottom: 20px;
+            bottom: 76px;
             display: none;
             align-items: center;
             gap: 4px;
