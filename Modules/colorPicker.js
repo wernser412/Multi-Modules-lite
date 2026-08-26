@@ -6,7 +6,7 @@
     name: "colorPicker",
     mod: {
       title: "🎨 Selector de color (RGB)",
-      desc: "Cuentagotas para elegir cualquier color en pantalla y ver su HEX/RGB, con historial y copiado con un click",
+      desc: "Cuentagotas para elegir cualquier color en pantalla y ver su HEX/RGB, con copiado con un click",
       category: "General",
 
       enable() {
@@ -19,8 +19,6 @@
           x: `mml_cp_fab_x__${SITE}`,
           y: `mml_cp_fab_y__${SITE}`
         };
-        const HISTORY_KEY = "mml_cp_history";
-        const MAX_HISTORY = 8;
         const DEFAULT_POS = { x: 20, y: 132 }; // arriba de imageHoverZoom (76) y elementHider (20)
         const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
 
@@ -67,40 +65,43 @@
             border-radius: 10px;
             border: 1px solid rgba(255,255,255,.12);
             margin-bottom: 10px;
-            cursor: pointer;
           }
           .mml-cp-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 8px;
             background: #1d2025;
             border-radius: 8px;
             padding: 6px 9px;
             margin-bottom: 6px;
+          }
+          .mml-cp-row .mml-cp-label { color: #8a8f98; font-size: 10.5px; flex: none; }
+          .mml-cp-row .mml-cp-value {
+            font-weight: 600;
+            letter-spacing: .2px;
+            flex: 1 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .mml-cp-row .mml-cp-copy-btn {
+            flex: none;
+            border: 1px solid rgba(255,255,255,.14);
+            background: #262a31;
+            color: #eee;
+            font-size: 10.5px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 6px;
             cursor: pointer;
           }
-          .mml-cp-row:hover { background: #23262c; }
-          .mml-cp-row .mml-cp-label { color: #8a8f98; font-size: 10.5px; }
-          .mml-cp-row .mml-cp-value { font-weight: 600; letter-spacing: .2px; }
+          .mml-cp-row .mml-cp-copy-btn:hover { background: #30353d; }
           #mml-cp-hint {
             text-align: center;
             color: #8a8f98;
             font-size: 10.5px;
             margin-top: 2px;
-          }
-          #mml-cp-history {
-            display: flex;
-            gap: 6px;
-            margin-top: 10px;
-            flex-wrap: wrap;
-          }
-          #mml-cp-history .mml-cp-h-swatch {
-            width: 22px;
-            height: 22px;
-            border-radius: 6px;
-            border: 1px solid rgba(255,255,255,.15);
-            cursor: pointer;
-            flex: none;
           }
           #mml-cp-toast {
             position: absolute;
@@ -140,20 +141,34 @@
 
         const swatch = document.createElement("div");
         swatch.id = "mml-cp-swatch";
-        swatch.title = "Click para copiar el HEX";
         panel.appendChild(swatch);
 
+        // Cada fila: etiqueta (HEX/RGB) + valor + botón "Copiar" explícito,
+        // igual que en la versión de AutoHotkey.
         const makeRow = (labelText) => {
           const row = document.createElement("div");
           row.className = "mml-cp-row";
+
           const label = document.createElement("span");
           label.className = "mml-cp-label";
           label.textContent = labelText;
+
           const value = document.createElement("span");
           value.className = "mml-cp-value";
           value.textContent = "—";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.type = "button";
+          copyBtn.className = "mml-cp-copy-btn";
+          copyBtn.textContent = "Copiar";
+          copyBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            copyText(value.textContent);
+          });
+
           row.appendChild(label);
           row.appendChild(value);
+          row.appendChild(copyBtn);
           panel.appendChild(row);
           return { row, value };
         };
@@ -163,12 +178,8 @@
 
         const hint = document.createElement("div");
         hint.id = "mml-cp-hint";
-        hint.textContent = "Click en un valor para copiarlo";
+        hint.textContent = "Click en \"Copiar\" para copiar el valor";
         panel.appendChild(hint);
-
-        const history = document.createElement("div");
-        history.id = "mml-cp-history";
-        panel.appendChild(history);
 
         document.documentElement.appendChild(panel);
 
@@ -180,6 +191,7 @@
           toastTimer = setTimeout(() => toast.classList.remove("mml-cp-show"), 900);
         };
         const copyText = async (text) => {
+          if (!text || text === "—") return;
           try {
             await navigator.clipboard.writeText(text);
             showToast();
@@ -193,37 +205,6 @@
           return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
         };
 
-        // ---------- Historial (persistido, global) ----------
-        const loadHistory = () => {
-          try { return JSON.parse(GM_getValue(HISTORY_KEY, "[]")); } catch { return []; }
-        };
-        const saveHistory = (list) => {
-          try { GM_setValue(HISTORY_KEY, JSON.stringify(list)); } catch {}
-        };
-
-        const renderHistory = () => {
-          while (history.firstChild) history.removeChild(history.firstChild);
-          for (const hex of loadHistory()) {
-            const sw = document.createElement("div");
-            sw.className = "mml-cp-h-swatch";
-            sw.style.background = hex;
-            sw.title = hex;
-            sw.addEventListener("click", (e) => {
-              e.stopPropagation();
-              showColor(hex);
-              copyText(hex);
-            });
-            history.appendChild(sw);
-          }
-        };
-
-        const pushHistory = (hex) => {
-          const list = loadHistory().filter((h) => h.toLowerCase() !== hex.toLowerCase());
-          list.unshift(hex);
-          saveHistory(list.slice(0, MAX_HISTORY));
-          renderHistory();
-        };
-
         // ---------- Mostrar un color en el panel ----------
         const showColor = (hex) => {
           const { r, g, b } = hexToRgb(hex);
@@ -234,16 +215,12 @@
           positionPanel();
         };
 
-        swatch.addEventListener("click", () => copyText(hexRow.value.textContent));
-        hexRow.row.addEventListener("click", () => copyText(hexRow.value.textContent));
-        rgbRow.row.addEventListener("click", () => copyText(rgbRow.value.textContent));
-
         // ---------- Posicionamiento del panel (junto al FAB, sin salirse) ----------
         const positionPanel = () => {
           const fr = fab.getBoundingClientRect();
           let left = fr.right + 10;
           let top = fr.top;
-          const pw = 220, ph = panel.offsetHeight || 220;
+          const pw = 220, ph = panel.offsetHeight || 180;
           if (left + pw > window.innerWidth - 4) left = fr.left - pw - 10;
           if (left < 4) left = clamp(fr.left, 4, window.innerWidth - pw - 4);
           if (top + ph > window.innerHeight - 4) top = window.innerHeight - ph - 4;
@@ -271,7 +248,6 @@
             const result = await eyeDropper.open();
             const hex = result.sRGBHex;
             showColor(hex);
-            pushHistory(hex);
           } catch (err) {
             // AbortError = el usuario canceló (Esc / click derecho). Cualquier
             // otro error se deja ver en consola para poder diagnosticarlo.
@@ -346,8 +322,6 @@
           if (panel.classList.contains("mml-cp-open")) positionPanel();
         };
         window.addEventListener("resize", onWindowResize);
-
-        renderHistory();
 
         this._cleanup = () => {
           document.removeEventListener("click", onDocClick, true);
