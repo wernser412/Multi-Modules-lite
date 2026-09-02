@@ -6,7 +6,7 @@
     name: "ytSpeedButton",
     mod: {
       title: "⏩ Botón de velocidad",
-      desc: "Ciclo 1× / 1.5× / 2×, se mantiene entre videos",
+      desc: "Ciclo 1× / 1.5× / 2× /2.5× /3×, se mantiene entre videos",
       category: "YouTube",
 
       enable() {
@@ -17,7 +17,7 @@
         let btn;
         let videoObserver;
 
-        const speeds = [1, 1.5, 2];
+        const speeds = [1, 1.5, 2, 2.5, 3];
         let index = 0;
 
         const applyRate = () => {
