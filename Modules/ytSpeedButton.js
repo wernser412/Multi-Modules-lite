@@ -6,7 +6,7 @@
     name: "ytSpeedButton",
     mod: {
       title: "⏩ Botón de velocidad",
-      desc: "Ciclo 1× / 1.5× / 2× /2.5× /3×, se mantiene entre videos",
+      desc: "Click: abre lista de velocidades para elegir directo.",
       category: "YouTube",
 
       enable() {
@@ -15,14 +15,87 @@
 
         let observer;
         let btn;
+        let menu;
         let videoObserver;
+        let outsideClickHandler;
 
-        const speeds = [1, 1.5, 2, 2.5, 3];
-        let index = 0;
+        const speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+        let current = 1;
 
         const applyRate = () => {
           const v = document.querySelector("video");
-          if (v) v.playbackRate = speeds[index];
+          if (v) v.playbackRate = current;
+        };
+
+        const setSpeed = (s) => {
+          current = s;
+          if (btn) btn.textContent = current + "×";
+          applyRate();
+          closeMenu();
+        };
+
+        const closeMenu = () => {
+          menu?.remove();
+          menu = null;
+          if (outsideClickHandler) {
+            document.removeEventListener("click", outsideClickHandler, true);
+            outsideClickHandler = null;
+          }
+        };
+
+        const openMenu = () => {
+          if (menu) {
+            closeMenu();
+            return;
+          }
+
+          menu = document.createElement("div");
+          menu.id = "vh-speed-menu";
+          menu.style.cssText = `
+            position:absolute;
+            bottom:calc(100% + 6px);
+            right:0;
+            background:rgba(28,28,28,.95);
+            border-radius:6px;
+            padding:4px 0;
+            display:flex; flex-direction:column;
+            min-width:64px;
+            box-shadow:0 4px 14px rgba(0,0,0,.5);
+            font-family:inherit;
+            z-index:99999;
+          `;
+
+          speeds.forEach((s) => {
+            const item = document.createElement("div");
+            item.textContent = s + "×";
+            item.style.cssText = `
+              padding:6px 14px;
+              font-size:13px;
+              color:${s === current ? "#3ea6ff" : "white"};
+              font-weight:${s === current ? "700" : "400"};
+              cursor:pointer;
+              text-align:right;
+            `;
+            item.onmouseenter = () => item.style.background = "rgba(255,255,255,.15)";
+            item.onmouseleave = () => item.style.background = "transparent";
+            item.onclick = (e) => {
+              e.stopPropagation();
+              setSpeed(s);
+            };
+            menu.appendChild(item);
+          });
+
+          btn.appendChild(menu);
+
+          // Cierra el menú si haces click fuera de él.
+          outsideClickHandler = (e) => {
+            if (menu && !menu.contains(e.target) && e.target !== btn) {
+              closeMenu();
+            }
+          };
+          setTimeout(() => {
+            document.addEventListener("click", outsideClickHandler, true);
+          }, 0);
         };
 
         const createButton = (controls) => {
@@ -32,18 +105,19 @@
           btn = document.createElement("button");
           btn.id = "vh-speed";
           btn.className = "ytp-button";
-          btn.textContent = speeds[index] + "×";
+          btn.textContent = current + "×";
+          btn.title = "Elegir velocidad";
 
           btn.style.cssText = `
+            position:relative;
             display:flex; align-items:center; justify-content:center;
             width:48px; height:100%; font-size:13px; font-weight:700;
             line-height:1; padding:0; margin:0; color:white; text-align:center;
           `;
 
-          btn.onclick = () => {
-            index = (index + 1) % speeds.length;
-            btn.textContent = speeds[index] + "×";
-            applyRate();
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            openMenu();
           };
 
           controls.prepend(btn);
@@ -74,6 +148,7 @@
           observer?.disconnect();
           videoObserver?.disconnect();
           document.querySelector("video")?.removeEventListener("loadedmetadata", applyRate);
+          closeMenu();
           btn?.remove();
           btn = null;
         };
