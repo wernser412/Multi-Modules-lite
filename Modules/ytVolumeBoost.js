@@ -6,7 +6,7 @@
     name: "ytVolumeBoost",
     mod: {
       title: "🔊 Volumen avanzado",
-      desc: "Hasta 300%, se re-aplica al cambiar de video",
+      desc: "Hasta 300%, slider vertical como el de YouTube, se re-aplica al cambiar de video",
       category: "YouTube",
 
       enable() {
@@ -15,8 +15,8 @@
 
         const VOL_KEY = "vh_volume_level";
         let ctx, gainNode;
-        let slider, label, container;
-        let videoObserver, controlsObserver;
+        let btn, popup, label, slider;
+        let videoObserver, controlsObserver, outsideClickHandler;
 
         const connected = new WeakSet();
 
@@ -39,37 +39,109 @@
           }
         };
 
-        const createUI = (controls) => {
-          if (!controls) return;
-          if (document.getElementById("vh-volume")) return;
+        const applyValue = (val) => {
+          const video = document.querySelector("video");
+          connectVideo(video);
+          if (gainNode) gainNode.gain.value = val / 100;
+          if (label) label.textContent = val + "%";
+          localStorage.setItem(VOL_KEY, val);
+        };
 
+        const closePopup = () => {
+          popup?.remove();
+          popup = null;
+          if (outsideClickHandler) {
+            document.removeEventListener("click", outsideClickHandler, true);
+            outsideClickHandler = null;
+          }
+        };
+
+        const openPopup = () => {
+          if (popup) {
+            closePopup();
+            return;
+          }
+
+          const rect = btn.getBoundingClientRect();
           const saved = getSaved();
 
-          container = document.createElement("div");
-          container.id = "vh-volume";
-          container.style.cssText = "display:flex;align-items:center;gap:6px;margin-right:10px;";
+          popup = document.createElement("div");
+          popup.id = "vh-volume-popup";
+          popup.style.cssText = `
+            position:fixed;
+            bottom:${window.innerHeight - rect.top + 6}px;
+            left:${rect.left + rect.width / 2 - 24}px;
+            width:48px;
+            height:130px;
+            background:rgba(28,28,28,.97);
+            border-radius:8px;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            padding:10px 0;
+            box-shadow:0 4px 14px rgba(0,0,0,.5);
+            z-index:2147483647;
+          `;
 
           label = document.createElement("span");
           label.textContent = saved + "%";
-          label.style.cssText = "font-size:12px;color:white;min-width:35px;text-align:center;";
+          label.style.cssText = "font-size:11px;color:white;margin-bottom:8px;user-select:none;";
 
           slider = document.createElement("input");
           slider.type = "range";
-          slider.min = "100";
+          slider.min = "0";
           slider.max = "300";
           slider.value = saved;
-          slider.style.width = "80px";
+          slider.title = "Volumen (0%-300%)";
 
-          slider.oninput = () => {
-            const video = document.querySelector("video");
-            connectVideo(video);
-            if (gainNode) gainNode.gain.value = slider.value / 100;
-            label.textContent = slider.value + "%";
-            localStorage.setItem(VOL_KEY, slider.value);
+          // Slider vertical: soportado nativamente en Chrome/Edge/Opera con
+          // -webkit-appearance:slider-vertical. Firefox usa orient="vertical".
+          slider.setAttribute("orient", "vertical");
+          slider.style.cssText = `
+            -webkit-appearance: slider-vertical;
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 6px;
+            height: 90px;
+            cursor: pointer;
+          `;
+
+          slider.oninput = () => applyValue(slider.value);
+
+          popup.append(label, slider);
+          document.body.appendChild(popup);
+
+          outsideClickHandler = (e) => {
+            if (popup && !popup.contains(e.target) && e.target !== btn) {
+              closePopup();
+            }
+          };
+          setTimeout(() => {
+            document.addEventListener("click", outsideClickHandler, true);
+          }, 0);
+        };
+
+        const createUI = (controls) => {
+          if (!controls) return;
+          if (document.getElementById("vh-volume-btn")) return;
+
+          btn = document.createElement("button");
+          btn.id = "vh-volume-btn";
+          btn.className = "ytp-button";
+          btn.title = "Volumen avanzado (hasta 300%)";
+          btn.textContent = "🔊";
+          btn.style.cssText = `
+            display:flex; align-items:center; justify-content:center;
+            width:40px; height:100%; font-size:16px; padding:0; margin:0;
+            color:white; background:transparent; border:none;
+          `;
+
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            openPopup();
           };
 
-          container.append(label, slider);
-          controls.prepend(container);
+          controls.prepend(btn);
 
           connectVideo(document.querySelector("video"));
         };
@@ -83,7 +155,7 @@
 
           controlsObserver = new MutationObserver(() => {
             const c = document.querySelector(".ytp-right-controls");
-            if (c && !document.getElementById("vh-volume")) createUI(c);
+            if (c && !document.getElementById("vh-volume-btn")) createUI(c);
           });
           controlsObserver.observe(document.body, { childList: true, subtree: true });
 
@@ -95,7 +167,8 @@
           clearInterval(wait);
           controlsObserver?.disconnect();
           videoObserver?.disconnect();
-          document.getElementById("vh-volume")?.remove();
+          closePopup();
+          document.getElementById("vh-volume-btn")?.remove();
           ctx?.close?.();
           ctx = null;
           gainNode = null;
