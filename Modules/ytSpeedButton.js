@@ -49,20 +49,22 @@
             return;
           }
 
+          const rect = btn.getBoundingClientRect();
+
           menu = document.createElement("div");
           menu.id = "vh-speed-menu";
           menu.style.cssText = `
-            position:absolute;
-            bottom:calc(100% + 6px);
-            right:0;
-            background:rgba(28,28,28,.95);
+            position:fixed;
+            bottom:${window.innerHeight - rect.top + 6}px;
+            left:${rect.right - 64}px;
+            background:rgba(28,28,28,.97);
             border-radius:6px;
             padding:4px 0;
             display:flex; flex-direction:column;
             min-width:64px;
             box-shadow:0 4px 14px rgba(0,0,0,.5);
             font-family:inherit;
-            z-index:99999;
+            z-index:2147483647;
           `;
 
           speeds.forEach((s) => {
@@ -85,7 +87,7 @@
             menu.appendChild(item);
           });
 
-          btn.appendChild(menu);
+          document.body.appendChild(menu);
 
           // Cierra el menú si haces click fuera de él.
           outsideClickHandler = (e) => {
@@ -109,7 +111,6 @@
           btn.title = "Elegir velocidad";
 
           btn.style.cssText = `
-            position:relative;
             display:flex; align-items:center; justify-content:center;
             width:48px; height:100%; font-size:13px; font-weight:700;
             line-height:1; padding:0; margin:0; color:white; text-align:center;
