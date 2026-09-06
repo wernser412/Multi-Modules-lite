@@ -218,6 +218,7 @@
             box-shadow: 0 8px 24px rgba(0,0,0,.45);
           }
           #mml-hz-ov-toolbar.mml-hz-ov-open { display: flex; }
+          #mml-hz-ov-toolbar.mml-hz-ov-mini .mml-hz-ov-extra { display: none; }
           #mml-hz-ov-fullscreen {
             position: fixed;
             inset: 0;
@@ -660,16 +661,23 @@
           const btnFlipH = makeBtn("⇋", "Voltear horizontal");
           const btnFlipV = makeBtn("⇕", "Voltear vertical");
           const sep1 = document.createElement("div");
-          sep1.className = "mml-hz-sep";
+          sep1.className = "mml-hz-sep mml-hz-ov-extra";
           const btnZoomOut = makeBtn("−", "Alejar");
           const btnZoomIn = makeBtn("+", "Acercar");
           const sep2 = document.createElement("div");
-          sep2.className = "mml-hz-sep";
+          sep2.className = "mml-hz-sep mml-hz-ov-extra";
           const btnPin = makeBtn("📌", "Fijar: mantener el zoom aunque el mouse salga de la imagen");
           const btnFullscreen = makeBtn("⛶", "Ver en pantalla completa");
           const sep3 = document.createElement("div");
-          sep3.className = "mml-hz-sep";
+          sep3.className = "mml-hz-sep mml-hz-ov-extra";
           const btnReset = makeBtn("↺", "Restablecer todo");
+
+          // Mientras se hace hover normal, la toolbar sobre la imagen solo
+          // muestra el botón de pantalla completa. El resto de controles
+          // (rotar, voltear, zoom, pin, reset) recién aparecen al entrar
+          // en pantalla completa.
+          [btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV, btnZoomOut, btnZoomIn, btnPin, btnReset]
+            .forEach(b => b.classList.add("mml-hz-ov-extra"));
 
           ovToolbar.append(
             btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV,
@@ -677,6 +685,7 @@
             sep2, btnPin, btnFullscreen,
             sep3, btnReset
           );
+          ovToolbar.classList.add("mml-hz-ov-mini");
           document.documentElement.appendChild(ovToolbar);
 
           // ---------- Overlay de pantalla completa ----------
@@ -772,6 +781,7 @@
             fsOpen = true;
             fsOverlay.classList.add("mml-hz-ov-fs-open");
             btnFullscreen.classList.add("mml-hz-active");
+            ovToolbar.classList.remove("mml-hz-ov-mini"); // en pantalla completa: mostrar todos los controles
             applyTransform();
             positionToolbarFullscreen();
             document.addEventListener("keydown", onFsKeydown, true);
@@ -781,6 +791,7 @@
             fsOpen = false;
             fsOverlay.classList.remove("mml-hz-ov-fs-open");
             btnFullscreen.classList.remove("mml-hz-active");
+            ovToolbar.classList.add("mml-hz-ov-mini"); // al volver al hover normal: solo el botón ⛶
             document.removeEventListener("keydown", onFsKeydown, true);
             if (currentEl) {
               positionToolbar();
