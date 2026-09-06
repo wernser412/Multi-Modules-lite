@@ -15,14 +15,7 @@
         this.active = true;
 
         // ---------- Config / persistencia ----------
-        const SITE = location.hostname || "default";
-        const LS_KEY = {
-          x: `mml_hz_toolbar_x__${SITE}`,
-          y: `mml_hz_toolbar_y__${SITE}`,
-          open: `mml_hz_toolbar_open__${SITE}`
-        };
         const MODE_KEY = "mml_hz_mode"; // "float" | "overlay" | null (sin elegir todavía)
-        const DEFAULT_POS = { x: 20, y: 76 }; // distancia desde bottom-left
         const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
         const MIN_SIZE = 48; // tamaño mínimo para no activar con iconos/avatares/sprites
 
@@ -129,36 +122,6 @@
             position: fixed;
             z-index: 2147483647;
             display: none; /* solo visible cuando el panel flotante está activo (imagen en hover o fijado) */
-          }
-          #mml-hz-fab {
-            width: 38px;
-            height: 38px;
-            box-sizing: border-box;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: none;
-            border-radius: 999px;
-            background: #14161a;
-            color: #eee;
-            font-size: 16px;
-            cursor: grab;
-            box-shadow: 0 8px 24px rgba(0,0,0,.45);
-            border: 1px solid rgba(255,255,255,.08);
-            user-select: none;
-            touch-action: none;
-          }
-          #mml-hz-fab.mml-hz-dragging { cursor: grabbing; }
-          #mml-hz-fab.mml-hz-active { background: #4285F4; }
-          #mml-hz-fab span {
-            display: inline-block;
-            transition: transform .15s ease;
-          }
-          #mml-hz-fab.mml-hz-active span { transform: rotate(180deg); }
-          #mml-hz-row {
-            position: absolute;
-            top: 0;
-            display: none;
             align-items: center;
             gap: 4px;
             background: #14161a;
@@ -167,10 +130,7 @@
             padding: 6px;
             box-shadow: 0 8px 24px rgba(0,0,0,.45);
           }
-          #mml-hz-row.mml-hz-open { display: flex; }
-          #mml-hz-row.mml-hz-row-right { left: 44px; }
-          #mml-hz-row.mml-hz-row-left { right: 44px; }
-          #mml-hz-row button,
+          #mml-hz-toolbar button,
           #mml-hz-ov-toolbar button {
             box-sizing: border-box;
             width: 30px;
@@ -187,11 +147,11 @@
             line-height: 1;
             flex: none;
           }
-          #mml-hz-row button:hover,
+          #mml-hz-toolbar button:hover,
           #mml-hz-ov-toolbar button:hover { background: rgba(255,255,255,.2); }
-          #mml-hz-row button.mml-hz-active,
+          #mml-hz-toolbar button.mml-hz-active,
           #mml-hz-ov-toolbar button.mml-hz-active { background: #4285F4; }
-          #mml-hz-row .mml-hz-sep,
+          #mml-hz-toolbar .mml-hz-sep,
           #mml-hz-ov-toolbar .mml-hz-sep {
             width: 1px;
             align-self: stretch;
@@ -330,9 +290,10 @@
 
         /********************************************************
          MODO 1: Panel flotante
-         Los controles (FAB + fila de botones) solo se muestran
-         mientras el panel flotante está activo: hay una imagen en
-         hover, o quedó fijado con 📌. Si no, están ocultos.
+         Los controles aparecen pegados justo arriba del panel
+         ampliado (no como un botón suelto en otra parte de la
+         pantalla), y solo mientras el panel está activo: hay una
+         imagen en hover, o quedó fijado con 📌. Si no, están ocultos.
         ********************************************************/
         const initFloatMode = () => {
           // ---------- Panel de preview ----------
@@ -344,21 +305,9 @@
           wrap.appendChild(panel);
           document.documentElement.appendChild(wrap);
 
-          // ---------- Toolbar compacto: FAB + fila de controles ----------
+          // ---------- Toolbar: fila de controles pegada arriba del panel ----------
           const toolbar = document.createElement("div");
           toolbar.id = "mml-hz-toolbar";
-
-          const fab = document.createElement("button");
-          fab.id = "mml-hz-fab";
-          fab.type = "button";
-          const fabIcon = document.createElement("span");
-          fabIcon.textContent = "▶";
-          fab.appendChild(fabIcon);
-          fab.title = "Controles de zoom (arrastrar para mover)";
-
-          const row = document.createElement("div");
-          row.id = "mml-hz-row";
-          row.className = "mml-hz-row-right";
 
           const btnRotateLeft = makeBtn("⟲", "Rotar 90° a la izquierda");
           const btnRotateRight = makeBtn("⟳", "Rotar 90° a la derecha");
@@ -373,19 +322,34 @@
           const btnPin = makeBtn("📌", "Fijar: mantener visible aunque el mouse salga de la imagen");
           const btnReset = makeBtn("↺", "Restablecer todo");
 
-          row.append(
+          toolbar.append(
             btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV,
             sep1, btnZoomOut, btnZoomIn,
             sep2, btnPin, btnReset
           );
-
-          toolbar.append(fab, row);
           document.documentElement.appendChild(toolbar);
 
           // ---------- Mostrar/ocultar panel + controles juntos ----------
           const setPanelVisible = (visible) => {
             wrap.style.display = visible ? "block" : "none";
-            toolbar.style.display = visible ? "block" : "none";
+            toolbar.style.display = visible ? "flex" : "none";
+          };
+
+          // ---------- Posicionar la toolbar pegada arriba del panel ----------
+          // Se ancla al contenedor "wrap" (no al <img> transformado), para
+          // que rotar/zoomear/mover la imagen no haga saltar la toolbar.
+          const positionToolbar = () => {
+            if (wrap.style.display === "none") return;
+            const r = wrap.getBoundingClientRect();
+            if (!r.width || !r.height) return;
+            const tw = toolbar.offsetWidth || 260;
+            const th = toolbar.offsetHeight || 42;
+            let left = r.left + r.width / 2 - tw / 2;
+            left = clamp(left, 4, window.innerWidth - tw - 4);
+            let top = r.top - th - 8;
+            if (top < 4) top = r.top + 6; // si no entra arriba, se superpone en el borde superior del panel
+            toolbar.style.left = `${left}px`;
+            toolbar.style.top = `${top}px`;
           };
 
           // ---------- Estado de transformación de la imagen ----------
@@ -451,79 +415,13 @@
             resetState();
           });
 
-          // ---------- Abrir/cerrar la fila de controles (compacto) ----------
-          const setOpen = (open) => {
-            row.classList.toggle("mml-hz-open", open);
-            fab.classList.toggle("mml-hz-active", open);
-            GM_setValue(LS_KEY.open, open ? "1" : "0");
-
-            if (open) {
-              row.className = "mml-hz-row mml-hz-open mml-hz-row-right";
-              const r = row.getBoundingClientRect();
-              if (r.right > window.innerWidth - 4) {
-                row.className = "mml-hz-row mml-hz-open mml-hz-row-left";
-              }
-            }
-          };
-
-          // ---------- Arrastrar el FAB (posición persistida por sitio) ----------
-          const setToolbarPos = (x, y) => {
-            const w = 38, h = 38;
-            x = clamp(x, 4, window.innerWidth - w - 4);
-            y = clamp(y, 4, window.innerHeight - h - 4);
-            toolbar.style.left = `${x}px`;
-            toolbar.style.top = `${y}px`;
-            return { x, y };
-          };
-
-          const savedX = Number(GM_getValue(LS_KEY.x, DEFAULT_POS.x));
-          const savedY = Number(GM_getValue(LS_KEY.y, DEFAULT_POS.y));
-          setToolbarPos(savedX, window.innerHeight - savedY - 38);
-          setOpen(GM_getValue(LS_KEY.open, "0") === "1");
-
-          let dragging = false;
-          let moved = false;
-          let dragStartX = 0, dragStartY = 0, dragStartLeft = 0, dragStartTop = 0;
-
-          const onDragStart = (e) => {
-            dragging = true;
-            moved = false;
-            fab.classList.add("mml-hz-dragging");
-            fab.setPointerCapture(e.pointerId);
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            const r = toolbar.getBoundingClientRect();
-            dragStartLeft = r.left;
-            dragStartTop = r.top;
-          };
-          const onDragMove = (e) => {
-            if (!dragging) return;
-            if (Math.abs(e.clientX - dragStartX) > 3 || Math.abs(e.clientY - dragStartY) > 3) moved = true;
-            if (!moved) return;
-            const pos = setToolbarPos(
-              dragStartLeft + (e.clientX - dragStartX),
-              dragStartTop + (e.clientY - dragStartY)
-            );
-            GM_setValue(LS_KEY.x, pos.x);
-            GM_setValue(LS_KEY.y, window.innerHeight - pos.y - 38);
-          };
-          const onDragEnd = (e) => {
-            if (!dragging) return;
-            dragging = false;
-            fab.classList.remove("mml-hz-dragging");
-            try { fab.releasePointerCapture(e.pointerId); } catch {}
-            if (!moved) setOpen(!row.classList.contains("mml-hz-open"));
-          };
-          fab.addEventListener("pointerdown", onDragStart);
-          fab.addEventListener("pointermove", onDragMove);
-          fab.addEventListener("pointerup", onDragEnd);
-          fab.addEventListener("pointercancel", onDragEnd);
-
-          const onWindowResize = () => {
-            const r = toolbar.getBoundingClientRect();
-            setToolbarPos(r.left, r.top);
-          };
+          // La toolbar se reposiciona sola (pegada arriba del panel) cada
+          // vez que la imagen ampliada cambia de tamaño o la ventana se
+          // redimensiona/hace scroll.
+          panel.addEventListener("load", positionToolbar);
+          const onWindowResize = () => positionToolbar();
           window.addEventListener("resize", onWindowResize);
+          window.addEventListener("scroll", onWindowResize, true);
 
           // ---------- Arrastrar la imagen ampliada (pan, solo si está 📌) ----------
           let panning = false;
@@ -624,6 +522,7 @@
             }
             positionPanel(e.clientX);
             setPanelVisible(true);
+            positionToolbar();
           };
 
           const onLeaveWindow = (e) => {
@@ -637,6 +536,8 @@
             document.removeEventListener("mousemove", onMove, true);
             document.removeEventListener("mouseout", onLeaveWindow, true);
             window.removeEventListener("resize", onWindowResize);
+            window.removeEventListener("scroll", onWindowResize, true);
+            panel.removeEventListener("load", positionToolbar);
             panel.removeEventListener("pointerdown", onPanStart);
             panel.removeEventListener("pointermove", onPanMove);
             panel.removeEventListener("pointerup", onPanEnd);
