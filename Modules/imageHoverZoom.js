@@ -128,6 +128,7 @@
           #mml-hz-toolbar {
             position: fixed;
             z-index: 2147483647;
+            display: none; /* solo visible cuando el panel flotante está activo (imagen en hover o fijado) */
           }
           #mml-hz-fab {
             width: 38px;
@@ -217,9 +218,27 @@
             box-shadow: 0 8px 24px rgba(0,0,0,.45);
           }
           #mml-hz-ov-toolbar.mml-hz-ov-open { display: flex; }
+          #mml-hz-ov-fullscreen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.92);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2147483646;
+          }
+          #mml-hz-ov-fullscreen.mml-hz-ov-fs-open { display: flex; }
+          #mml-hz-ov-fullscreen-img {
+            max-width: 92vw;
+            max-height: 92vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 0 60px rgba(0,0,0,.8);
+            transition: transform .15s ease;
+          }
         `);
 
-        // ---------- Extraer URL de imagen (modo flotante) ----------
+        // ---------- Extraer URL de imagen ----------
         // Sirve para imágenes normales, lazy-load (data-src/data-original),
         // <image> de SVG y fondos con background-image.
         const extract = (node) => {
@@ -309,7 +328,10 @@
         };
 
         /********************************************************
-         MODO 1: Panel flotante (comportamiento original)
+         MODO 1: Panel flotante
+         Los controles (FAB + fila de botones) solo se muestran
+         mientras el panel flotante está activo: hay una imagen en
+         hover, o quedó fijado con 📌. Si no, están ocultos.
         ********************************************************/
         const initFloatMode = () => {
           // ---------- Panel de preview ----------
@@ -358,6 +380,12 @@
 
           toolbar.append(fab, row);
           document.documentElement.appendChild(toolbar);
+
+          // ---------- Mostrar/ocultar panel + controles juntos ----------
+          const setPanelVisible = (visible) => {
+            wrap.style.display = visible ? "block" : "none";
+            toolbar.style.display = visible ? "block" : "none";
+          };
 
           // ---------- Estado de transformación de la imagen ----------
           const state = { rot: 0, flipH: false, flipV: false, zoom: 1, pinned: false, panX: 0, panY: 0 };
@@ -544,7 +572,7 @@
             cancelHide();
             hideTimer = setTimeout(() => {
               lastUrl = "";
-              wrap.style.display = "none";
+              setPanelVisible(false);
             }, 350);
           };
 
@@ -594,7 +622,7 @@
               resetState();
             }
             positionPanel(e.clientX);
-            wrap.style.display = "block";
+            setPanelVisible(true);
           };
 
           const onLeaveWindow = (e) => {
@@ -619,7 +647,9 @@
         };
 
         /********************************************************
-         MODO 2: Toolbar arriba de la misma imagen (in-place)
+         MODO 2: Toolbar arriba de la misma imagen (in-place),
+         con botón ⛶ para ver la imagen en pantalla completa
+         (con todos los controles disponibles ahí también).
         ********************************************************/
         const initOverlayMode = () => {
           const ovToolbar = document.createElement("div");
@@ -636,24 +666,41 @@
           const sep2 = document.createElement("div");
           sep2.className = "mml-hz-sep";
           const btnPin = makeBtn("📌", "Fijar: mantener el zoom aunque el mouse salga de la imagen");
+          const btnFullscreen = makeBtn("⛶", "Ver en pantalla completa");
+          const sep3 = document.createElement("div");
+          sep3.className = "mml-hz-sep";
           const btnReset = makeBtn("↺", "Restablecer todo");
 
           ovToolbar.append(
             btnRotateLeft, btnRotateRight, btnFlipH, btnFlipV,
             sep1, btnZoomOut, btnZoomIn,
-            sep2, btnPin, btnReset
+            sep2, btnPin, btnFullscreen,
+            sep3, btnReset
           );
           document.documentElement.appendChild(ovToolbar);
+
+          // ---------- Overlay de pantalla completa ----------
+          const fsOverlay = document.createElement("div");
+          fsOverlay.id = "mml-hz-ov-fullscreen";
+          const fsImg = document.createElement("img");
+          fsImg.id = "mml-hz-ov-fullscreen-img";
+          fsOverlay.appendChild(fsImg);
+          document.documentElement.appendChild(fsOverlay);
 
           const state = { rot: 0, flipH: false, flipV: false, zoom: 1, pinned: false };
           let currentEl = null;
           let originalInline = { position: "", zIndex: "" };
+          let fsOpen = false;
 
           const applyTransform = () => {
-            if (!currentEl) return;
-            currentEl.style.transformOrigin = "top center";
-            currentEl.style.transform =
-              `rotate(${state.rot}deg) scale(${state.zoom * (state.flipH ? -1 : 1)}, ${state.zoom * (state.flipV ? -1 : 1)})`;
+            const t = `rotate(${state.rot}deg) scale(${state.zoom * (state.flipH ? -1 : 1)}, ${state.zoom * (state.flipV ? -1 : 1)})`;
+            if (currentEl) {
+              currentEl.style.transformOrigin = "top center";
+              currentEl.style.transform = t;
+            }
+            if (fsOpen) {
+              fsImg.style.transform = t;
+            }
           };
 
           const resetState = () => {
@@ -667,12 +714,20 @@
           };
 
           const positionToolbar = () => {
-            if (!currentEl) return;
+            if (!currentEl || fsOpen) return;
             const r = currentEl.getBoundingClientRect();
-            const tw = ovToolbar.offsetWidth || 200;
+            const tw = ovToolbar.offsetWidth || 220;
             let left = r.left + r.width / 2 - tw / 2;
             left = clamp(left, 4, window.innerWidth - tw - 4);
             let top = clamp(r.top + 6, 4, window.innerHeight - 40);
+            ovToolbar.style.left = `${left}px`;
+            ovToolbar.style.top = `${top}px`;
+          };
+
+          const positionToolbarFullscreen = () => {
+            const tw = ovToolbar.offsetWidth || 220;
+            const left = clamp(window.innerWidth / 2 - tw / 2, 4, window.innerWidth - tw - 4);
+            const top = window.innerHeight - 54;
             ovToolbar.style.left = `${left}px`;
             ovToolbar.style.top = `${top}px`;
           };
@@ -702,6 +757,41 @@
             ovToolbar.classList.add("mml-hz-ov-open");
             positionToolbar();
           };
+
+          // ---------- Pantalla completa ----------
+          const onFsKeydown = (e) => {
+            if (e.key === "Escape") closeFullscreen();
+          };
+
+          const openFullscreen = () => {
+            if (!currentEl) return;
+            const url = extract(currentEl);
+            if (!url) return;
+            cancelHide();
+            fsImg.src = url;
+            fsOpen = true;
+            fsOverlay.classList.add("mml-hz-ov-fs-open");
+            btnFullscreen.classList.add("mml-hz-active");
+            applyTransform();
+            positionToolbarFullscreen();
+            document.addEventListener("keydown", onFsKeydown, true);
+          };
+
+          const closeFullscreen = () => {
+            fsOpen = false;
+            fsOverlay.classList.remove("mml-hz-ov-fs-open");
+            btnFullscreen.classList.remove("mml-hz-active");
+            document.removeEventListener("keydown", onFsKeydown, true);
+            if (currentEl) {
+              positionToolbar();
+            } else {
+              ovToolbar.classList.remove("mml-hz-ov-open");
+            }
+          };
+
+          fsOverlay.addEventListener("click", (e) => {
+            if (e.target === fsOverlay) closeFullscreen();
+          });
 
           btnRotateLeft.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -740,6 +830,11 @@
             state.pinned = !state.pinned;
             btnPin.classList.toggle("mml-hz-active", state.pinned);
           });
+          btnFullscreen.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (fsOpen) closeFullscreen();
+            else openFullscreen();
+          });
           btnReset.addEventListener("click", (e) => {
             e.stopPropagation();
             resetState();
@@ -753,12 +848,14 @@
             }
           };
           const scheduleHide = () => {
-            if (!currentEl || state.pinned) return;
+            if (!currentEl || state.pinned || fsOpen) return;
             cancelHide();
             hideTimer = setTimeout(() => clearTarget(), 300);
           };
 
           const onMove = (e) => {
+            if (fsOpen) return; // no cambiar de imagen mientras está en pantalla completa
+
             if (ovToolbar.contains(e.target)) {
               cancelHide();
               return;
@@ -787,7 +884,10 @@
             }
           };
 
-          const onScrollOrResize = () => positionToolbar();
+          const onScrollOrResize = () => {
+            if (fsOpen) positionToolbarFullscreen();
+            else positionToolbar();
+          };
 
           document.addEventListener("mousemove", onMove, true);
           window.addEventListener("scroll", onScrollOrResize, true);
@@ -797,9 +897,11 @@
             document.removeEventListener("mousemove", onMove, true);
             window.removeEventListener("scroll", onScrollOrResize, true);
             window.removeEventListener("resize", onScrollOrResize);
+            document.removeEventListener("keydown", onFsKeydown, true);
             cancelHide();
             clearTarget();
             ovToolbar.remove();
+            fsOverlay.remove();
           };
         };
 
@@ -820,11 +922,11 @@
 
         const btnModeFloat = document.createElement("button");
         btnModeFloat.type = "button";
-        btnModeFloat.innerHTML = "<b>🖼️ Panel flotante</b><span>Vista ampliada en un panel lateral + toolbar movible</span>";
+        btnModeFloat.innerHTML = "<b>🖼️ Panel flotante</b><span>Vista ampliada en un panel lateral. Controles visibles solo con el panel activo</span>";
 
         const btnModeOverlay = document.createElement("button");
         btnModeOverlay.type = "button";
-        btnModeOverlay.innerHTML = "<b>📌 Sobre la imagen</b><span>Zoom en el lugar + toolbar arriba de la imagen</span>";
+        btnModeOverlay.innerHTML = "<b>📌 Sobre la imagen</b><span>Zoom en el lugar + toolbar arriba de la imagen, con opción de pantalla completa</span>";
 
         modeMenu.append(modeMenuTitle, btnModeFloat, btnModeOverlay);
         document.documentElement.append(modeFab, modeMenu);
