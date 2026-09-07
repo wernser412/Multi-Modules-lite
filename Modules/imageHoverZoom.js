@@ -875,13 +875,29 @@
         modeMenuTitle.className = "mml-hz-mode-title";
         modeMenuTitle.textContent = "Modo de Image Hover Zoom";
 
-        const btnModeFloat = document.createElement("button");
-        btnModeFloat.type = "button";
-        btnModeFloat.innerHTML = "<b>🖼️ Panel flotante</b><span>Vista ampliada en un panel lateral. Controles visibles solo con el panel activo</span>";
+        // Nota: se arma con createElement/textContent (no innerHTML) porque
+        // sitios como YouTube exigen Trusted Types y bloquean la asignación
+        // directa a innerHTML, lo que rompía la creación de todo el menú.
+        const makeModeOption = (titleText, descText) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const b = document.createElement("b");
+          b.textContent = titleText;
+          const span = document.createElement("span");
+          span.textContent = descText;
+          btn.append(b, span);
+          return btn;
+        };
 
-        const btnModeOverlay = document.createElement("button");
-        btnModeOverlay.type = "button";
-        btnModeOverlay.innerHTML = "<b>📌 Sobre la imagen</b><span>Zoom en el lugar + toolbar arriba de la imagen, con opción de pantalla completa</span>";
+        const btnModeFloat = makeModeOption(
+          "🖼️ Panel flotante",
+          "Vista ampliada en un panel lateral. Controles visibles solo con el panel activo"
+        );
+
+        const btnModeOverlay = makeModeOption(
+          "📌 Sobre la imagen",
+          "Zoom en el lugar + toolbar arriba de la imagen, con opción de pantalla completa"
+        );
 
         modeMenu.append(modeMenuTitle, btnModeFloat, btnModeOverlay);
         document.documentElement.append(modeFab, modeMenu);
