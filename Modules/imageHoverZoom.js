@@ -199,6 +199,27 @@
           }
         `);
 
+        // ---------- Elegir la mejor URL real de un <img> ----------
+        // Muchos sitios usan lazy-load: el src/currentSrc visible es un
+        // placeholder borroso o un data: URI diminuto, y la imagen final
+        // está en un atributo data-src / data-original / etc. Si existe
+        // un placeholder, preferimos siempre el atributo "real".
+        const LAZY_ATTRS = ["data-src", "data-original", "data-lazy-src", "data-lazy", "data-echo"];
+        const isPlaceholder = (url) => !url || url.startsWith("data:");
+        const pickImgUrl = (imgEl) => {
+          const orig = imgEl.getAttribute("orig");
+          if (orig) return orig;
+          let lazy = "";
+          for (const attr of LAZY_ATTRS) {
+            const v = imgEl.getAttribute(attr);
+            if (v) { lazy = v; break; }
+          }
+          const direct = imgEl.currentSrc || imgEl.src || "";
+          if (lazy && !isPlaceholder(lazy)) return lazy;
+          if (direct && !isPlaceholder(direct)) return direct;
+          return lazy || direct || "";
+        };
+
         // ---------- Extraer URL de imagen ----------
         // Sirve para imágenes normales, lazy-load (data-src/data-original),
         // <image> de SVG y fondos con background-image.
@@ -212,14 +233,7 @@
             const tag = node.tagName.toLowerCase();
 
             if (tag === "img") {
-              return (
-                node.getAttribute("orig") ||
-                node.currentSrc ||
-                node.src ||
-                node.getAttribute("data-src") ||
-                node.getAttribute("data-original") ||
-                ""
-              );
+              return pickImgUrl(node);
             }
 
             if (tag === "image") {
@@ -235,11 +249,7 @@
             if (child) {
               const cs2 = getComputedStyle(child);
               return (
-                child.getAttribute("orig") ||
-                child.currentSrc ||
-                child.src ||
-                child.getAttribute("data-src") ||
-                child.getAttribute("data-original") ||
+                pickImgUrl(child) ||
                 child.getAttribute("href") ||
                 child.getAttribute("xlink:href") ||
                 (cs2.backgroundImage !== "none" &&
@@ -286,6 +296,23 @@
           const r = el.getBoundingClientRect?.();
           if (!r) return false;
           return r.width < MIN_SIZE || r.height < MIN_SIZE;
+        };
+
+        // ---------- Encontrar el elemento real bajo el mouse (Shadow DOM) ----------
+        // Sitios como YouTube envuelven sus miniaturas en Web Components con
+        // Shadow DOM (p. ej. <yt-img-shadow> con un <img> adentro). Cuando el
+        // listener está en document, e.target queda "retargeteado" al host del
+        // shadow root en vez de al <img> real, así que closest() nunca lo
+        // encuentra. composedPath() sí perfora el shadow DOM y devuelve el
+        // elemento real con el que se interactuó.
+        const deepTarget = (e) => {
+          let t = e.target;
+          if (typeof e.composedPath === "function") {
+            const path = e.composedPath();
+            if (path && path.length) t = path[0];
+          }
+          if (t && t.nodeType !== 1) t = t.parentElement;
+          return t;
         };
 
         /********************************************************
@@ -499,7 +526,7 @@
               return;
             }
 
-            const el = e.target.closest?.("img, image, [style*='background-image']");
+            const el = deepTarget(e)?.closest?.("img, image, [style*='background-image']");
 
             if (!el || isTooSmall(el)) {
               scheduleHide();
@@ -663,6 +690,22 @@
             if (getComputedStyle(el).position === "static") el.style.position = "relative";
             el.style.zIndex = "2147483000";
             el.classList.add("mml-hz-ov-target");
+
+            // Forzar la imagen real: si el sitio usa lazy-load y todavía
+            // está mostrando un placeholder borroso/oscuro, lo reemplazamos
+            // ya mismo para que el zoom se vea bien desde el primer hover.
+            const tag = el.tagName?.toLowerCase();
+            if (tag === "img") {
+              const real = pickImgUrl(el);
+              if (real && el.getAttribute("src") !== real) el.setAttribute("src", real);
+            } else if (tag === "image") {
+              const real = el.getAttribute("href") || el.getAttribute("xlink:href");
+              if (real) {
+                el.setAttribute("href", real);
+                el.setAttribute("xlink:href", real);
+              }
+            }
+
             resetState();
             ovToolbar.classList.add("mml-hz-ov-open");
             positionToolbar();
@@ -773,7 +816,7 @@
               return;
             }
 
-            const hit = e.target.closest?.("img, image, [style*='background-image']");
+            const hit = deepTarget(e)?.closest?.("img, image, [style*='background-image']");
 
             if (!hit || isTooSmall(hit)) {
               scheduleHide();
