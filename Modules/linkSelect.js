@@ -24,6 +24,20 @@
           return el;
         }
 
+        // Elemento real bajo el mouse, atravesando Shadow DOM. Sitios como
+        // Reddit ponen la barra lateral/menús dentro de shadow roots
+        // reales; sin esto, e.target queda "retargeteado" al componente
+        // host en vez del <a> real de adentro.
+        const deepTarget = (e) => {
+          let t = e.target;
+          if (typeof e.composedPath === "function") {
+            const path = e.composedPath();
+            if (path && path.length) t = path[0];
+          }
+          if (t && t.nodeType !== 1) t = t.parentElement;
+          return t;
+        };
+
         function caretFromPoint(x, y) {
           if (document.caretPositionFromPoint) {
             return document.caretPositionFromPoint(x, y);
@@ -48,9 +62,36 @@
         // por "pointer-events: none" en el texto, como en las tarjetas de
         // Reddit— pero el navegador igual permitió seleccionar el texto
         // por su cuenta.
-        const hasRealSelection = () => {
-          const sel = window.getSelection();
-          return !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+        //
+        // OJO: si el texto vive dentro de un Shadow DOM real (no
+        // proyectado por slot, sino definido dentro del propio shadow
+        // root -típico en la barra lateral/menús de Reddit-),
+        // document.getSelection() a nivel de la página NO ve esa
+        // selección: Chrome la expone solo a través del getSelection()
+        // propio de ese shadow root. Por eso recorremos composedPath()
+        // buscando shadow roots y consultamos cada uno también.
+        const hasRealSelection = (e) => {
+          const isReal = sel => !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+
+          if (isReal(window.getSelection())) return true;
+
+          const path = e?.composedPath ? e.composedPath() : [];
+          const checked = new Set();
+
+          for (const node of path) {
+            const root = node?.getRootNode ? node.getRootNode() : null;
+            if (
+              root &&
+              root !== document &&
+              typeof root.getSelection === "function" &&
+              !checked.has(root)
+            ) {
+              checked.add(root);
+              if (isReal(root.getSelection())) return true;
+            }
+          }
+
+          return false;
         };
 
         function startSelecting() {
@@ -72,9 +113,11 @@
           if (state !== "WAITING") return;
           if (e.button !== 0 || e.altKey) return;
 
+          const target = deepTarget(e);
+
           // No interferir con inputs, textareas, contenteditable ni botones:
           // ahí un click normal (sin selección de texto) debe funcionar tal cual.
-          if (e.target.closest?.("input, textarea, [contenteditable='true'], button, [role='button'], select")) return;
+          if (target?.closest?.("input, textarea, [contenteditable='true'], button, [role='button'], select")) return;
 
           selectType = e.ctrlKey ? "add" : e.shiftKey ? "extend" : "new";
           initPos = [e.pageX, e.pageY];
@@ -83,7 +126,7 @@
 
           // Si hay un <a> ancestro, le forzamos user-select por si el sitio
           // se lo desactivó (común en tarjetas/enlaces clickeables).
-          anchorEl = findLink(e.target);
+          anchorEl = findLink(target);
           if (anchorEl) anchorEl.classList.add("mml-select-inside-link");
         };
 
@@ -101,10 +144,11 @@
           }
         };
 
-        const onMouseUp = () => {
-          if (state === "STARTED" || hasRealSelection()) {
-            // Hubo una selección real (nuestra o nativa del navegador):
-            // recién acá bloqueamos el click siguiente.
+        const onMouseUp = (e) => {
+          if (state === "STARTED" || hasRealSelection(e)) {
+            // Hubo una selección real (nuestra o nativa del navegador,
+            // incluso dentro de un shadow root): recién acá bloqueamos
+            // el click siguiente.
             state = "ENDING";
             setTimeout(startWaiting, 0);
           } else if (state !== "WAITING") {
@@ -114,14 +158,14 @@
         };
 
         const onClick = e => {
-          if (state === "ENDING" || hasRealSelection()) {
+          if (state === "ENDING" || hasRealSelection(e)) {
             // Hubo una selección de texto real: no dejar que el click
-            // dispare una navegación. Esto cubre tanto los <a> normales
-            // como tarjetas que navegan por JS al detectar un click en
-            // cualquier parte (p. ej. las tarjetas de video de YouTube o
-            // de posts de Reddit), ya que al frenar la propagación acá
-            // (fase de captura, antes de llegar al elemento) el handler
-            // de esas tarjetas nunca se llega a ejecutar.
+            // dispare una navegación. Esto cubre <a> normales, tarjetas
+            // que navegan por JS al detectar un click en cualquier parte
+            // (YouTube, Reddit) y también texto dentro de shadow roots
+            // reales (barra lateral / menús de Reddit), ya que al frenar
+            // la propagación acá (fase de captura, antes de llegar al
+            // elemento) el handler que navega nunca se llega a ejecutar.
             e.preventDefault();
             e.stopImmediatePropagation();
           }
