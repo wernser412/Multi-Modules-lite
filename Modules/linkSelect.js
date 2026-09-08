@@ -38,12 +38,50 @@
           return t;
         };
 
-        function caretFromPoint(x, y) {
+        function rawCaretFromPoint(x, y) {
           if (document.caretPositionFromPoint) {
             return document.caretPositionFromPoint(x, y);
           }
           const r = document.caretRangeFromPoint(x, y);
           return r ? { offsetNode: r.startContainer, offset: r.startOffset } : null;
+        }
+
+        // Perfora elementos con pointer-events:none que tapan el punto (p. ej.
+        // las tarjetas de Reddit, donde el texto real tiene pointer-events:none
+        // y un <a> overlay ("stretched link") de toda la tarjeta lo cubre para
+        // navegar). caretPositionFromPoint respeta pointer-events igual que
+        // cualquier hit-test de mouse, así que sin esto siempre devuelve una
+        // posición dentro del overlay vacío en vez del texto real de abajo.
+        function caretFromPoint(x, y) {
+          const forced = [];
+          let pos = rawCaretFromPoint(x, y);
+          let guard = 0;
+
+          while (guard++ < 8) {
+            const node = pos?.offsetNode;
+            const hasText = node && (
+              node.nodeType === 3
+                ? node.data.trim().length > 0
+                : node.textContent?.trim().length > 0
+            );
+            if (hasText) break;
+
+            const el = document.elementFromPoint(x, y);
+            if (!el || forced.includes(el)) break;
+
+            const cs = getComputedStyle(el);
+            if (cs.pointerEvents === "none") break; // ya debería estar excluido del hit-test
+
+            // El elemento encontrado sí recibe eventos (p. ej. el overlay de
+            // Reddit): lo apagamos un instante para que el próximo hit-test
+            // mire lo que hay debajo.
+            el.style.setProperty("pointer-events", "none", "important");
+            forced.push(el);
+            pos = rawCaretFromPoint(x, y);
+          }
+
+          forced.forEach(el => el.style.removeProperty("pointer-events"));
+          return pos;
         }
 
         function getInitPos() {
