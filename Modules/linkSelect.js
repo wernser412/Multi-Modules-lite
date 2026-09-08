@@ -11,6 +11,9 @@
 
       enable() {
 
+        const DEBUG = true;
+        const log = (...args) => { if (DEBUG) console.log("[linkSelect]", ...args); };
+
         const selection = window.getSelection();
 
         let state = "WAITING";
@@ -108,14 +111,23 @@
 
         function caretFromPoint(x, y) {
           const direct = rawCaretFromPoint(x, y);
-          if (hasRealText(direct?.offsetNode)) return direct;
+          if (hasRealText(direct?.offsetNode)) {
+            log("caret: hit-test nativo encontró texto directo", direct.offsetNode);
+            return direct;
+          }
 
           // El hit-test nativo no encontró texto real (probablemente por
           // pointer-events:none). Buscamos a mano dentro de un contenedor
           // razonable alrededor del punto.
           const hit = document.elementFromPoint(x, y);
           const root = hit?.closest?.("article, main, [role='article'], body") || document.body;
-          return findTextCaret(root, x, y) || direct;
+          const manual = findTextCaret(root, x, y);
+          if (manual) {
+            log("caret: encontrado a mano dentro de", root, manual.offsetNode);
+          } else {
+            log("caret: NO se encontró texto ni con hit-test nativo ni a mano. hit=", hit, "root=", root, "direct=", direct);
+          }
+          return manual || direct;
         }
 
         function getInitPos() {
@@ -189,7 +201,8 @@
 
         function startSelecting() {
           const pos = getInitPos();
-          if (!pos || !pos.offsetNode) return;
+          log("startSelecting, pos=", pos);
+          if (!pos || !pos.offsetNode) { log("startSelecting abortado: sin posición de texto"); return; }
 
           forceSelectableChain(pos.offsetNode);
 
@@ -201,23 +214,29 @@
             selection.addRange(range);
           }
 
+          log("selection tras collapse/addRange:", selection.toString(), "isCollapsed:", selection.isCollapsed);
           state = "STARTED";
         }
 
         const onMouseDown = e => {
-          if (state !== "WAITING") return;
+          if (state !== "WAITING") { log("mousedown ignorado, state=", state); return; }
           if (e.button !== 0 || e.altKey) return;
 
           const target = deepTarget(e);
+          log("mousedown en", target);
 
           // No interferir con inputs, textareas, contenteditable ni botones:
           // ahí un click normal (sin selección de texto) debe funcionar tal cual.
-          if (target?.closest?.("input, textarea, [contenteditable='true'], button, [role='button'], select")) return;
+          if (target?.closest?.("input, textarea, [contenteditable='true'], button, [role='button'], select")) {
+            log("mousedown descartado: target está dentro de un control interactivo");
+            return;
+          }
 
           selectType = e.ctrlKey ? "add" : e.shiftKey ? "extend" : "new";
           initPos = [e.pageX, e.pageY];
           mousemoves = 0;
           state = "STARTING";
+          log("state -> STARTING");
 
           // Si hay un <a> ancestro, le forzamos user-select por si el sitio
           // se lo desactivó (común en tarjetas/enlaces clickeables).
@@ -228,7 +247,7 @@
         const onMouseMove = e => {
           if (state === "STARTING") {
             mousemoves++;
-            if (mousemoves >= 3) startSelecting();
+            if (mousemoves >= 3) { log("umbral de 3 mousemoves alcanzado, llamando startSelecting()"); startSelecting(); }
           }
 
           if (state === "STARTED") {
