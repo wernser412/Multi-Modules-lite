@@ -14,19 +14,10 @@
         const selection = window.getSelection();
 
         let state = "WAITING";
-        let linkTarget = null;
+        let anchorEl = null; // <a> ancestor, si existe (solo para el estilo user-select)
         let initPos = [0, 0];
         let selectType = "new";
         let mousemoves = 0;
-
-        const moves = [[0, 0], [0, 0], [0, 0]];
-        let index = 0;
-
-        const onTrackMove = e => {
-          moves[index][0] = e.pageX;
-          moves[index][1] = e.pageY;
-          index = (index + 1) % 3;
-        };
 
         function findLink(el) {
           while (el && el.nodeName !== "A") el = el.parentNode;
@@ -38,7 +29,7 @@
             return document.caretPositionFromPoint(x, y);
           }
           const r = document.caretRangeFromPoint(x, y);
-          return { offsetNode: r.startContainer, offset: r.startOffset };
+          return r ? { offsetNode: r.startContainer, offset: r.startOffset } : null;
         }
 
         function getInitPos() {
@@ -46,13 +37,14 @@
         }
 
         function startWaiting() {
-          if (linkTarget) linkTarget.classList.remove("mml-select-inside-link");
+          if (anchorEl) anchorEl.classList.remove("mml-select-inside-link");
           state = "WAITING";
-          linkTarget = null;
+          anchorEl = null;
         }
 
         function startSelecting() {
           const pos = getInitPos();
+          if (!pos || !pos.offsetNode) return;
 
           if (selectType === "new") {
             selection.collapse(pos.offsetNode, pos.offset);
@@ -69,15 +61,19 @@
           if (state !== "WAITING") return;
           if (e.button !== 0 || e.altKey) return;
 
-          const link = findLink(e.target);
-          if (!link || !link.href) return;
+          // No interferir con inputs, textareas, contenteditable ni botones:
+          // ahí un click normal (sin selección de texto) debe funcionar tal cual.
+          if (e.target.closest?.("input, textarea, [contenteditable='true'], button, [role='button'], select")) return;
 
           selectType = e.ctrlKey ? "add" : e.shiftKey ? "extend" : "new";
           initPos = [e.pageX, e.pageY];
           mousemoves = 0;
           state = "STARTING";
-          linkTarget = link;
-          link.classList.add("mml-select-inside-link");
+
+          // Si hay un <a> ancestro, le forzamos user-select por si el sitio
+          // se lo desactivó (común en tarjetas/enlaces clickeables).
+          anchorEl = findLink(e.target);
+          if (anchorEl) anchorEl.classList.add("mml-select-inside-link");
         };
 
         const onMouseMove = e => {
@@ -88,7 +84,9 @@
 
           if (state === "STARTED") {
             const caret = caretFromPoint(e.pageX - window.scrollX, e.pageY - window.scrollY);
-            try { selection.extend(caret.offsetNode, caret.offset); } catch {}
+            if (caret) {
+              try { selection.extend(caret.offsetNode, caret.offset); } catch {}
+            }
           }
         };
 
@@ -99,18 +97,22 @@
             setTimeout(startWaiting, 0);
           } else if (state !== "WAITING") {
             // Fue un click normal (sin arrastrar para seleccionar texto):
-            // no bloquear la navegación del link.
+            // no bloquear nada.
             startWaiting();
           }
         };
 
         const onClick = e => {
-          if (state === "ENDING" && linkTarget) {
-            const clicked = findLink(e.target);
-            if (clicked === linkTarget) {
-              e.preventDefault();
-              e.stopImmediatePropagation();
-            }
+          if (state === "ENDING") {
+            // Hubo una selección de texto real: no dejar que el click
+            // dispare una navegación. Esto cubre tanto los <a> normales
+            // como tarjetas que navegan por JS al detectar un click en
+            // cualquier parte (p. ej. las tarjetas de video de YouTube),
+            // ya que al frenar la propagación acá (fase de captura, antes
+            // de llegar al elemento) el handler de esas tarjetas nunca se
+            // llega a ejecutar.
+            e.preventDefault();
+            e.stopImmediatePropagation();
             startWaiting();
           }
         };
@@ -120,7 +122,6 @@
           else if (state === "STARTING") startSelecting();
         };
 
-        document.addEventListener("mousemove", onTrackMove, true);
         document.addEventListener("mousedown", onMouseDown, true);
         document.addEventListener("mousemove", onMouseMove, true);
         document.addEventListener("mouseup", onMouseUp, true);
@@ -136,7 +137,6 @@
         `);
 
         this._cleanup = () => {
-          document.removeEventListener("mousemove", onTrackMove, true);
           document.removeEventListener("mousedown", onMouseDown, true);
           document.removeEventListener("mousemove", onMouseMove, true);
           document.removeEventListener("mouseup", onMouseUp, true);
