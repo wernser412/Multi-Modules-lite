@@ -910,6 +910,8 @@
         const updateModeButtons = () => {
           btnModeFloat.classList.toggle("mml-hz-mode-active", currentMode === "float");
           btnModeOverlay.classList.toggle("mml-hz-mode-active", currentMode === "overlay");
+          btnModeFloat.title = currentMode === "float" ? "Tocar de nuevo para desactivar" : "";
+          btnModeOverlay.title = currentMode === "overlay" ? "Tocar de nuevo para desactivar" : "";
           modeFab.classList.toggle("mml-hz-mode-set", !!currentMode);
           modeFab.title = currentMode
             ? "Cambiar modo de Image Hover Zoom"
@@ -918,10 +920,18 @@
 
         const chooseMode = (mode) => {
           setMenuOpen(false);
-          if (mode === currentMode) return;
           if (teardownActive) {
             teardownActive();
             teardownActive = null;
+          }
+          if (mode === currentMode) {
+            // Volver a elegir el modo ya activo lo desactiva por completo,
+            // hasta que se elija (de nuevo) alguno de los dos modos.
+            currentMode = null;
+            GM_setValue(MODE_KEY, null);
+            updateModeButtons();
+            setMenuOpen(true);
+            return;
           }
           currentMode = mode;
           GM_setValue(MODE_KEY, mode);
