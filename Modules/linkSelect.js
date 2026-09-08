@@ -122,8 +122,29 @@
           return caretFromPoint(initPos[0] - window.scrollX, initPos[1] - window.scrollY);
         }
 
+        let forcedEls = [];
+
+        // Fuerza user-select:text en toda la cadena de ancestros del nodo de
+        // texto real (no solo en el <a> más cercano al punto de click). En
+        // Reddit el texto de las tarjetas suele tener user-select:none
+        // además de pointer-events:none, así que aunque logremos crear la
+        // selección por JS, el navegador no la pinta si no revertimos eso.
+        function forceSelectableChain(node) {
+          let el = node?.nodeType === 3 ? node.parentElement : node;
+          let guard = 0;
+          while (el && el !== document.body && guard++ < 12) {
+            if (!el.classList.contains("mml-select-inside-link")) {
+              el.classList.add("mml-select-inside-link");
+              forcedEls.push(el);
+            }
+            el = el.parentElement;
+          }
+        }
+
         function startWaiting() {
           if (anchorEl) anchorEl.classList.remove("mml-select-inside-link");
+          forcedEls.forEach(el => el.classList.remove("mml-select-inside-link"));
+          forcedEls = [];
           state = "WAITING";
           anchorEl = null;
         }
@@ -170,6 +191,8 @@
           const pos = getInitPos();
           if (!pos || !pos.offsetNode) return;
 
+          forceSelectableChain(pos.offsetNode);
+
           if (selectType === "new") {
             selection.collapse(pos.offsetNode, pos.offset);
           } else if (selectType === "add") {
@@ -211,6 +234,7 @@
           if (state === "STARTED") {
             const caret = caretFromPoint(e.pageX - window.scrollX, e.pageY - window.scrollY);
             if (caret) {
+              forceSelectableChain(caret.offsetNode);
               try { selection.extend(caret.offsetNode, caret.offset); } catch {}
             }
           }
