@@ -42,6 +42,17 @@
           anchorEl = null;
         }
 
+        // Chequeo de la verdad: hay o no una selección de texto real en
+        // este momento. Sirve como red de seguridad para sitios donde
+        // nuestra detección manual (caretPositionFromPoint) falla —p. ej.
+        // por "pointer-events: none" en el texto, como en las tarjetas de
+        // Reddit— pero el navegador igual permitió seleccionar el texto
+        // por su cuenta.
+        const hasRealSelection = () => {
+          const sel = window.getSelection();
+          return !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+        };
+
         function startSelecting() {
           const pos = getInitPos();
           if (!pos || !pos.offsetNode) return;
@@ -91,30 +102,30 @@
         };
 
         const onMouseUp = () => {
-          if (state === "STARTED") {
-            // Hubo una selección real: recién acá bloqueamos el click siguiente.
+          if (state === "STARTED" || hasRealSelection()) {
+            // Hubo una selección real (nuestra o nativa del navegador):
+            // recién acá bloqueamos el click siguiente.
             state = "ENDING";
             setTimeout(startWaiting, 0);
           } else if (state !== "WAITING") {
-            // Fue un click normal (sin arrastrar para seleccionar texto):
-            // no bloquear nada.
+            // Fue un click normal (sin seleccionar texto): no bloquear nada.
             startWaiting();
           }
         };
 
         const onClick = e => {
-          if (state === "ENDING") {
+          if (state === "ENDING" || hasRealSelection()) {
             // Hubo una selección de texto real: no dejar que el click
             // dispare una navegación. Esto cubre tanto los <a> normales
             // como tarjetas que navegan por JS al detectar un click en
-            // cualquier parte (p. ej. las tarjetas de video de YouTube),
-            // ya que al frenar la propagación acá (fase de captura, antes
-            // de llegar al elemento) el handler de esas tarjetas nunca se
-            // llega a ejecutar.
+            // cualquier parte (p. ej. las tarjetas de video de YouTube o
+            // de posts de Reddit), ya que al frenar la propagación acá
+            // (fase de captura, antes de llegar al elemento) el handler
+            // de esas tarjetas nunca se llega a ejecutar.
             e.preventDefault();
             e.stopImmediatePropagation();
-            startWaiting();
           }
+          if (state !== "WAITING") startWaiting();
         };
 
         const onDragStart = e => {
