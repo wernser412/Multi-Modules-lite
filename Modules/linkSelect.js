@@ -46,42 +46,76 @@
           return r ? { offsetNode: r.startContainer, offset: r.startOffset } : null;
         }
 
-        // Perfora elementos con pointer-events:none que tapan el punto (p. ej.
-        // las tarjetas de Reddit, donde el texto real tiene pointer-events:none
-        // y un <a> overlay ("stretched link") de toda la tarjeta lo cubre para
-        // navegar). caretPositionFromPoint respeta pointer-events igual que
-        // cualquier hit-test de mouse, así que sin esto siempre devuelve una
-        // posición dentro del overlay vacío en vez del texto real de abajo.
-        function caretFromPoint(x, y) {
-          const forced = [];
-          let pos = rawCaretFromPoint(x, y);
-          let guard = 0;
+        function hasRealText(node) {
+          if (!node) return false;
+          return node.nodeType === 3
+            ? node.data.trim().length > 0
+            : (node.textContent || "").trim().length > 0;
+        }
 
-          while (guard++ < 8) {
-            const node = pos?.offsetNode;
-            const hasText = node && (
-              node.nodeType === 3
-                ? node.data.trim().length > 0
-                : node.textContent?.trim().length > 0
-            );
-            if (hasText) break;
-
-            const el = document.elementFromPoint(x, y);
-            if (!el || forced.includes(el)) break;
-
-            const cs = getComputedStyle(el);
-            if (cs.pointerEvents === "none") break; // ya debería estar excluido del hit-test
-
-            // El elemento encontrado sí recibe eventos (p. ej. el overlay de
-            // Reddit): lo apagamos un instante para que el próximo hit-test
-            // mire lo que hay debajo.
-            el.style.setProperty("pointer-events", "none", "important");
-            forced.push(el);
-            pos = rawCaretFromPoint(x, y);
+        // Devuelve el offset (índice de carácter) dentro de un nodo de texto
+        // más cercano al punto (x, y), midiendo carácter por carácter con
+        // Range.getClientRects(). Como es puro layout, no le importa el
+        // pointer-events del nodo ni de sus ancestros.
+        function offsetForPoint(textNode, x, y) {
+          const len = textNode.data.length;
+          const r = document.createRange();
+          for (let i = 0; i < len; i++) {
+            r.setStart(textNode, i);
+            r.setEnd(textNode, i + 1);
+            const rects = r.getClientRects();
+            for (const rect of rects) {
+              if (y >= rect.top && y <= rect.bottom && x >= rect.left && x <= rect.right + 1) {
+                const mid = rect.left + rect.width / 2;
+                return x < mid ? i : i + 1;
+              }
+            }
           }
+          return len;
+        }
 
-          forced.forEach(el => el.style.removeProperty("pointer-events"));
-          return pos;
+        // Recorre a mano los nodos de texto de "root" buscando cuál cae bajo
+        // (x, y). Es el fallback para sitios tipo Reddit, donde el texto real
+        // de las tarjetas tiene pointer-events:none (y encima suele haber un
+        // <a> que cubre toda la tarjeta para navegar). El hit-test nativo del
+        // navegador (elementFromPoint / caretPositionFromPoint) EXCLUYE por
+        // completo cualquier elemento con pointer-events:none —igual que para
+        // un click real—, así que nunca "aterriza" en ese texto por más capas
+        // que se le saquen de encima al overlay: hay que ignorar pointer-events
+        // del todo y guiarse solo por la posición visual (rects) del texto.
+        function findTextCaret(root, x, y) {
+          if (!root) return null;
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(n) {
+              if (!n.data.trim()) return NodeFilter.FILTER_REJECT;
+              return NodeFilter.FILTER_ACCEPT;
+            }
+          });
+
+          const range = document.createRange();
+          let node;
+          while ((node = walker.nextNode())) {
+            range.selectNodeContents(node);
+            const rects = range.getClientRects();
+            for (const rect of rects) {
+              if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                return { offsetNode: node, offset: offsetForPoint(node, x, y) };
+              }
+            }
+          }
+          return null;
+        }
+
+        function caretFromPoint(x, y) {
+          const direct = rawCaretFromPoint(x, y);
+          if (hasRealText(direct?.offsetNode)) return direct;
+
+          // El hit-test nativo no encontró texto real (probablemente por
+          // pointer-events:none). Buscamos a mano dentro de un contenedor
+          // razonable alrededor del punto.
+          const hit = document.elementFromPoint(x, y);
+          const root = hit?.closest?.("article, main, [role='article'], body") || document.body;
+          return findTextCaret(root, x, y) || direct;
         }
 
         function getInitPos() {
