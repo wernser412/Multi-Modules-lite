@@ -93,9 +93,14 @@
         };
 
         const onMouseUp = () => {
-          if (state !== "WAITING") {
+          if (state === "STARTED") {
+            // Hubo una selección real: recién acá bloqueamos el click siguiente.
             state = "ENDING";
             setTimeout(startWaiting, 0);
+          } else if (state !== "WAITING") {
+            // Fue un click normal (sin arrastrar para seleccionar texto):
+            // no bloquear la navegación del link.
+            startWaiting();
           }
         };
 
