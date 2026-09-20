@@ -6,11 +6,10 @@
     name: "showPasswords",
     mod: {
       title: "👁 Mostrar contraseñas",
-      desc: "Agrega un botón para revelar el texto en campos de contraseña",
+      desc: "Agrega un botón para revelar el texto en campos de contraseña (estado global entre sitios)",
       category: "General",
 
       enable() {
-
         if (this.active) return;
         this.active = true;
 
@@ -33,57 +32,113 @@
         `);
 
         // IMPORTANTE: nunca movemos ni re-parentamos el <input> original.
-        // Muchos sitios (React, Vue, etc.) esperan que el campo siga siendo
-        // hijo directo del nodo que ellos controlan; si lo sacamos para
-        // meterlo en un wrapper, en cuanto el framework re-renderiza el
-        // formulario (típicamente al perder el foco) intenta reconciliar
-        // un DOM que ya no coincide con lo que espera, y el input queda
-        // roto o se reemplaza por uno nuevo (perdiendo el estado "visible").
-        // Por eso el ícono se dibuja como una capa flotante (position:fixed)
-        // posicionada por coordenadas, totalmente por fuera del árbol del
-        // formulario.
+        // El ícono se dibuja como capa flotante (position:fixed) por fuera
+        // del árbol del formulario, para no romper React/Vue/etc.
 
-        // Recordar qué campos estaban "visibles" para restaurarlos tras
-        // recargar la página, y compartirlo entre todas las pestañas/
-        // ventanas del mismo sitio. Se guarda en localStorage (persiste
-        // hasta que lo apagues o borres el storage del sitio, incluso si
-        // cerrás el navegador) y se identifica cada input por name/id o,
-        // si no tiene, por su posición entre los campos de contraseña de
-        // la página.
-        const storageKey = `mml_pw_visible::${location.pathname}`;
-        const readVisibleSet = () => {
+        // ── ESTADO GLOBAL ────────────────────────────────────────────
+        // Un único valor (mostrar / ocultar) guardado con GM_setValue,
+        // que Tampermonkey comparte entre TODOS los sitios y pestañas.
+        const GLOBAL_KEY = "mml_pw_show_global";
+        let globalShow = !!GM_getValue(GLOBAL_KEY, false);
+
+        const tracked = new Map(); // input -> { toggle, skipped, applied }
+        let rafId = null;
+        let frame = 0;
+
+        // ── DETECCIÓN DE OJITO PROPIO DEL SITIO ─────────────────────
+        // Miramos qué elementos hay justo donde iría nuestro ícono. Si hay
+        // algo "tipo botón/ícono" que no sea el input ni un ancestro suyo,
+        // asumimos que es el ojito nativo y NO mostramos el nuestro.
+        const PM_ATTR = /^(data-lastpass|data-bwautofill|data-1p|data-dashlane|com-1password|data-keeper)/i;
+        const PM_ID = /^(lp-|__lpform|bitwarden|1password|dashlane)/i;
+        const isPasswordManager = (el) =>
+          PM_ID.test(el.id || "") ||
+          [...(el.attributes || [])].some((a) => PM_ATTR.test(a.name));
+
+        const ICON_SELECTOR = 'button,[role="button"],svg,i,img,a,[tabindex]';
+        const isIconLike = (el, input) => {
+          const c = el.closest?.(ICON_SELECTOR);
+          if (c && !c.contains(input)) return true;
           try {
-            return new Set(JSON.parse(localStorage.getItem(storageKey) || "[]"));
+            return getComputedStyle(el).cursor === "pointer";
           } catch {
-            return new Set();
+            return false;
           }
         };
-        const writeVisibleSet = (set) => {
-          try {
-            localStorage.setItem(storageKey, JSON.stringify([...set]));
-          } catch {}
+
+        // elemento = hay ojito nativo, false = no hay, null = no se puede saber
+        // (input fuera de pantalla u oculto): en ese caso se conserva la
+        // decisión anterior.
+        const detectNative = (input) => {
+          if (!input.isConnected) return null;
+          const r = input.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return null;
+          if (
+            r.bottom < 0 || r.top > innerHeight ||
+            r.right < 0 || r.left > innerWidth
+          ) return null;
+
+          const size = Math.min(22, r.height);
+          const yc = r.top + r.height / 2;
+          const ys = [yc, yc - size / 4, yc + size / 4];
+          const xs = [0.25, 0.5, 0.75, 1].map((k) => r.right - 6 - size * k);
+
+          for (const x of xs) {
+            for (const y of ys) {
+              const els = document.elementsFromPoint(x, y);
+              for (const el of els) {
+                if (el === input) continue;
+                if (el.classList?.contains("mml-pw-toggle")) continue;
+                if (el.contains(input)) continue; // ancestros
+                if (isPasswordManager(el)) continue;
+                if (isIconLike(el, input)) return el;
+              }
+            }
+          }
+          return false;
         };
-        let pwIndex = 0;
-        const keyFor = (input) => input.name || input.id || `idx:${input.dataset.mmlPwIdx}`;
 
-        const tracked = new Map(); // input -> { toggle, showing }
-        let rafId = null;
-
-        const removeToggleFor = (input) => {
-          const entry = tracked.get(input);
-          if (!entry) return;
-          entry.toggle.remove();
-          tracked.delete(input);
+        // ── APLICAR ESTADO ──────────────────────────────────────────
+        const applyState = (input, entry, showing) => {
+          input.type = showing ? "text" : "password";
+          entry.toggle.textContent = showing ? "🙈" : "👁";
+          entry.applied = showing;
         };
 
-        const positionToggle = (input, toggle) => {
+        const applyAll = () => {
+          tracked.forEach((entry, input) => {
+            if (entry.skipped !== null) applyState(input, entry, globalShow);
+          });
+        };
+
+        const evaluate = (input, entry) => {
+          const res = detectNative(input);
+          if (res === null) return;
+          const isNative = !!res;
+          if (isNative) entry.nativeEl = res;
+          if (isNative === entry.skipped) return;
+          entry.skipped = isNative;
+          // Con o sin ojito nativo, aplicamos el estado global. La
+          // diferencia: si hay ojito nativo, ocultamos el nuestro.
+          if (isNative) entry.toggle.style.display = "none";
+          applyState(input, entry, globalShow);
+        };
+
+        // ── POSICIÓN ────────────────────────────────────────────────
+        const positionToggle = (input, entry) => {
+          const toggle = entry.toggle;
+          if (entry.skipped !== false) {
+            toggle.style.display = "none";
+            return;
+          }
           const rect = input.getBoundingClientRect();
+          const cs = getComputedStyle(input);
           const visible =
             rect.width > 0 &&
             rect.height > 0 &&
             input.isConnected &&
-            getComputedStyle(input).visibility !== "hidden" &&
-            getComputedStyle(input).display !== "none";
+            cs.visibility !== "hidden" &&
+            cs.display !== "none";
 
           if (!visible) {
             toggle.style.display = "none";
@@ -99,7 +154,11 @@
         };
 
         const tick = () => {
-          tracked.forEach(({ toggle }, input) => positionToggle(input, toggle));
+          frame++;
+          // Re-evaluar la presencia de ojito nativo ~2 veces por segundo
+          // (algunos sitios lo dibujan tarde).
+          if (frame % 30 === 0) tracked.forEach((entry, input) => evaluate(input, entry));
+          tracked.forEach((entry, input) => positionToggle(input, entry));
           rafId = requestAnimationFrame(tick);
         };
         const startLoop = () => {
@@ -110,45 +169,43 @@
           rafId = null;
         };
 
+        const removeToggleFor = (input) => {
+          const entry = tracked.get(input);
+          if (!entry) return;
+          entry.toggle.remove();
+          tracked.delete(input);
+        };
+
         const wrapInput = (input) => {
           if (tracked.has(input)) return;
           if (!input.isConnected) return;
 
-          if (input.dataset.mmlPwIdx === undefined) {
-            input.dataset.mmlPwIdx = String(pwIndex++);
-          }
-
           const toggle = document.createElement("span");
           toggle.className = "mml-pw-toggle";
-          toggle.title = "Mostrar/ocultar contraseña";
+          toggle.title = "Mostrar/ocultar contraseña (todos los sitios)";
+          toggle.textContent = "👁";
+          toggle.style.display = "none"; // oculto hasta decidir si hay ojito nativo
 
-          const applyState = (showing) => {
-            input.type = showing ? "text" : "password";
-            toggle.textContent = showing ? "🙈" : "👁";
-          };
+          // skipped: null = sin decidir, true = ojito nativo, false = usamos el nuestro
+          const entry = { toggle, skipped: null, applied: false };
 
-          toggle.addEventListener("mousedown", (e) => e.preventDefault()); // no robar el foco del input
+          toggle.addEventListener("mousedown", (e) => e.preventDefault()); // no robar el foco
           toggle.addEventListener("click", () => {
-            const showing = input.type !== "text";
-            applyState(showing);
-            const visibleSet = readVisibleSet();
-            const key = keyFor(input);
-            if (showing) visibleSet.add(key);
-            else visibleSet.delete(key);
-            writeVisibleSet(visibleSet);
+            globalShow = !globalShow;
+            try { GM_setValue(GLOBAL_KEY, globalShow); } catch {}
+            applyAll();
           });
 
-          // Restaurar si este campo estaba "visible" antes de recargar.
-          const wasVisible = readVisibleSet().has(keyFor(input));
-          applyState(wasVisible);
-
           document.body.appendChild(toggle);
-          tracked.set(input, { toggle });
-          positionToggle(input, toggle);
+          tracked.set(input, entry);
           startLoop();
 
-          // Si el sitio elimina/reemplaza el input (SPA, cierre de modal,
-          // otro render), sacamos su ícono para no dejar basura flotando.
+          // Primera evaluación rápida (el ojito nativo suele existir ya).
+          setTimeout(() => {
+            if (tracked.get(input) === entry) evaluate(input, entry);
+          }, 250);
+
+          // Si el sitio elimina/reemplaza el input, quitamos su ícono.
           const cleanupObserver = new MutationObserver(() => {
             if (!input.isConnected) {
               cleanupObserver.disconnect();
@@ -165,8 +222,7 @@
 
         scan();
 
-        // Muchos formularios de login se inyectan después (modales, SPA,
-        // "iniciar sesión" que aparece recién al hacer clic).
+        // Formularios inyectados después (modales, SPA, etc.).
         const observer = new MutationObserver((mutations) => {
           for (const m of mutations) {
             for (const node of m.addedNodes) {
@@ -176,42 +232,59 @@
             }
           }
         });
-
         observer.observe(document.body, { childList: true, subtree: true });
 
-        const onReposition = () => tracked.forEach(({ toggle }, input) => positionToggle(input, toggle));
+        const onReposition = () => tracked.forEach((entry, input) => positionToggle(input, entry));
         window.addEventListener("scroll", onReposition, true);
         window.addEventListener("resize", onReposition);
 
-        // Si tocás el ícono en otra pestaña del mismo sitio, sincroniza
-        // acá sin necesidad de recargar.
-        const onStorageSync = (e) => {
-          if (e.key !== storageKey) return;
-          const visibleSet = readVisibleSet();
-          tracked.forEach(({ toggle }, input) => {
-            const shouldShow = visibleSet.has(keyFor(input));
-            if ((input.type === "text") !== shouldShow) {
-              input.type = shouldShow ? "text" : "password";
-              toggle.textContent = shouldShow ? "🙈" : "👁";
-            }
+        // Clic en el ojito NATIVO del sitio: tras el clic, si el campo
+        // cambió de tipo, ese nuevo estado pasa a ser el global.
+        // (Se ignoran cambios que no vengan de un clic, p. ej. re-renders.)
+        const onNativeClick = (e) => {
+          tracked.forEach((entry, input) => {
+            if (entry.skipped !== true || e.target === input) return;
+            const r = input.getBoundingClientRect();
+            const inside =
+              e.clientX >= r.left && e.clientX <= r.right + 8 &&
+              e.clientY >= r.top && e.clientY <= r.bottom;
+            if (!inside) return;
+            setTimeout(() => {
+              const newShow = input.type === "text";
+              if (newShow === globalShow) return;
+              globalShow = newShow;
+              try { GM_setValue(GLOBAL_KEY, globalShow); } catch {}
+              applyAll();
+            }, 80);
           });
         };
-        window.addEventListener("storage", onStorageSync);
+        document.addEventListener("click", onNativeClick, true);
+
+        // Sincronizar con otras pestañas/sitios: sin necesidad de
+        // @grant GM_addValueChangeListener, consultamos cada segundo.
+        const syncTimer = setInterval(() => {
+          let v;
+          try { v = !!GM_getValue(GLOBAL_KEY, false); } catch { return; }
+          if (v !== globalShow) {
+            globalShow = v;
+            applyAll();
+          }
+        }, 1000);
 
         this._cleanup = () => {
           observer.disconnect();
+          clearInterval(syncTimer);
+          document.removeEventListener("click", onNativeClick, true);
           stopLoop();
           window.removeEventListener("scroll", onReposition, true);
           window.removeEventListener("resize", onReposition);
-          tracked.forEach(({ toggle }, input) => {
-            toggle.remove();
-            input.type = "password";
+          tracked.forEach((entry, input) => {
+            entry.toggle.remove();
+            if (entry.applied) input.type = "password";
           });
           tracked.clear();
-          try {
-            localStorage.removeItem(storageKey);
-          } catch {}
-          window.removeEventListener("storage", onStorageSync);
+          // Al apagar el módulo volvemos a "oculto" en todos lados.
+          try { GM_setValue(GLOBAL_KEY, false); } catch {}
           this.active = false;
         };
       },
