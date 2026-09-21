@@ -6,285 +6,403 @@
     name: "showPasswords",
     mod: {
       title: "👁 Mostrar contraseñas",
-      desc: "Agrega un botón para revelar el texto en campos de contraseña (estado global entre sitios)",
+      desc: "Panel flotante y movible: mostrar contraseñas siempre en todas las páginas, o solo al pasar el mouse sobre el campo",
       category: "General",
 
       enable() {
+
         if (this.active) return;
         this.active = true;
 
+        // Si es true, el panel aparece en TODAS las páginas (como Image Hover
+        // Zoom). Si es false, solo aparece en páginas que tengan algún campo
+        // de contraseña.
+        const ALWAYS_SHOW_TOOLBAR = false;
+
+        // ---------- Config / persistencia ----------
+        // Los modos son GLOBALES (GM_setValue se comparte entre todos los
+        // sitios y pestañas). La posición del panel se guarda por sitio.
+        const SITE = location.hostname || "default";
+        const KEY = {
+          all: "mml_pw_mode_all",
+          hover: "mml_pw_mode_hover",
+          x: `mml_pw_toolbar_x__${SITE}`,
+          y: `mml_pw_toolbar_y__${SITE}`,
+          open: `mml_pw_toolbar_open__${SITE}`
+        };
+        const DEFAULT_POS = { x: 20, y: 124 }; // distancia desde bottom-left
+        const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
+
+        let showAll = !!GM_getValue(KEY.all, false);   // siempre visibles
+        let hoverMode = !!GM_getValue(KEY.hover, false); // visibles al pasar el mouse
+
         GM_addStyle(`
-          .mml-pw-toggle {
+          #mml-pw-toolbar {
             position: fixed;
-            width: 22px;
-            height: 22px;
-            cursor: pointer;
+            z-index: 2147483647;
+          }
+          #mml-pw-fab {
+            width: 38px;
+            height: 38px;
+            box-sizing: border-box;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
-            opacity: .6;
-            z-index: 2147483000;
+            border: none;
+            border-radius: 999px;
+            background: #14161a;
+            color: #eee;
+            font-size: 16px;
+            cursor: grab;
+            box-shadow: 0 8px 24px rgba(0,0,0,.45);
+            border: 1px solid rgba(255,255,255,.08);
             user-select: none;
-            pointer-events: auto;
+            touch-action: none;
           }
-          .mml-pw-toggle:hover { opacity: 1; }
+          #mml-pw-fab.mml-pw-dragging { cursor: grabbing; }
+          #mml-pw-fab.mml-pw-active { background: #4285F4; }
+          #mml-pw-row {
+            position: absolute;
+            top: 0;
+            display: none;
+            align-items: center;
+            gap: 4px;
+            background: #14161a;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 999px;
+            padding: 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.45);
+            white-space: nowrap;
+          }
+          #mml-pw-row.mml-pw-open { display: flex; }
+          #mml-pw-row.mml-pw-row-right { left: 44px; }
+          #mml-pw-row.mml-pw-row-left { right: 44px; }
+          #mml-pw-row button {
+            box-sizing: border-box;
+            height: 30px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            border: none;
+            border-radius: 999px;
+            background: rgba(255,255,255,.08);
+            color: #eee;
+            font-size: 12px;
+            font-family: system-ui, sans-serif;
+            cursor: pointer;
+            line-height: 1;
+            flex: none;
+          }
+          #mml-pw-row button:hover { background: rgba(255,255,255,.2); }
+          #mml-pw-row button.mml-pw-active { background: #4285F4; }
         `);
 
-        // IMPORTANTE: nunca movemos ni re-parentamos el <input> original.
-        // El ícono se dibuja como capa flotante (position:fixed) por fuera
-        // del árbol del formulario, para no romper React/Vue/etc.
+        // ---------- Estado: qué campos hemos tocado ----------
+        // Marcamos los inputs con data-mml-pw para poder encontrarlos aunque
+        // ya no tengan type="password" (al mostrarlos pasan a type="text").
+        // shownByUs: solo revertimos los campos que nosotros mismos
+        // mostramos, así respetamos el ojito nativo del sitio si lo hay.
+        const shownByUs = new Set();
+        const hoverSet = new Set();
+        const INPUT_SEL = 'input[type="password"], input[data-mml-pw]';
+        const allInputs = () => document.querySelectorAll(INPUT_SEL);
 
-        // ── ESTADO GLOBAL ────────────────────────────────────────────
-        // Un único valor (mostrar / ocultar) guardado con GM_setValue,
-        // que Tampermonkey comparte entre TODOS los sitios y pestañas.
-        const GLOBAL_KEY = "mml_pw_show_global";
-        let globalShow = !!GM_getValue(GLOBAL_KEY, false);
+        const shouldShow = (input) => showAll || (hoverMode && hoverSet.has(input));
 
-        const tracked = new Map(); // input -> { toggle, skipped, applied }
-        let rafId = null;
-        let frame = 0;
-
-        // ── DETECCIÓN DE OJITO PROPIO DEL SITIO ─────────────────────
-        // Miramos qué elementos hay justo donde iría nuestro ícono. Si hay
-        // algo "tipo botón/ícono" que no sea el input ni un ancestro suyo,
-        // asumimos que es el ojito nativo y NO mostramos el nuestro.
-        const PM_ATTR = /^(data-lastpass|data-bwautofill|data-1p|data-dashlane|com-1password|data-keeper)/i;
-        const PM_ID = /^(lp-|__lpform|bitwarden|1password|dashlane)/i;
-        const isPasswordManager = (el) =>
-          PM_ID.test(el.id || "") ||
-          [...(el.attributes || [])].some((a) => PM_ATTR.test(a.name));
-
-        const ICON_SELECTOR = 'button,[role="button"],svg,i,img,a,[tabindex]';
-        const isIconLike = (el, input) => {
-          const c = el.closest?.(ICON_SELECTOR);
-          if (c && !c.contains(input)) return true;
-          try {
-            return getComputedStyle(el).cursor === "pointer";
-          } catch {
-            return false;
+        const apply = (input) => {
+          if (shouldShow(input)) {
+            if (input.type === "password") {
+              input.type = "text";
+              shownByUs.add(input);
+            }
+          } else if (shownByUs.has(input)) {
+            input.type = "password";
+            shownByUs.delete(input);
           }
         };
+        const applyAll = () => allInputs().forEach(apply);
 
-        // elemento = hay ojito nativo, false = no hay, null = no se puede saber
-        // (input fuera de pantalla u oculto): en ese caso se conserva la
-        // decisión anterior.
-        const detectNative = (input) => {
-          if (!input.isConnected) return null;
-          const r = input.getBoundingClientRect();
-          if (r.width <= 0 || r.height <= 0) return null;
-          if (
-            r.bottom < 0 || r.top > innerHeight ||
-            r.right < 0 || r.left > innerWidth
-          ) return null;
+        // ---------- Toolbar: FAB + fila de controles ----------
+        const toolbar = document.createElement("div");
+        toolbar.id = "mml-pw-toolbar";
+        toolbar.style.display = ALWAYS_SHOW_TOOLBAR ? "" : "none";
 
-          const size = Math.min(22, r.height);
-          const yc = r.top + r.height / 2;
-          const ys = [yc, yc - size / 4, yc + size / 4];
-          const xs = [0.25, 0.5, 0.75, 1].map((k) => r.right - 6 - size * k);
+        const fab = document.createElement("button");
+        fab.id = "mml-pw-fab";
+        fab.type = "button";
+        fab.textContent = "👁";
+        fab.title = "Mostrar contraseñas (arrastrar para mover)";
 
-          for (const x of xs) {
-            for (const y of ys) {
-              const els = document.elementsFromPoint(x, y);
-              for (const el of els) {
-                if (el === input) continue;
-                if (el.classList?.contains("mml-pw-toggle")) continue;
-                if (el.contains(input)) continue; // ancestros
-                if (isPasswordManager(el)) continue;
-                if (isIconLike(el, input)) return el;
-              }
+        const row = document.createElement("div");
+        row.id = "mml-pw-row";
+        row.className = "mml-pw-row-right";
+
+        const makeBtn = (label, title) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = label;
+          b.title = title;
+          return b;
+        };
+        const btnAll = makeBtn("🌐 Siempre", "Mostrar las contraseñas siempre, en todas las páginas");
+        const btnHover = makeBtn("🖱 Al pasar el mouse", "Mostrar la contraseña solo mientras el mouse está sobre el campo (en todas las páginas)");
+        row.append(btnAll, btnHover);
+
+        toolbar.append(fab, row);
+        document.documentElement.appendChild(toolbar);
+
+        const refreshButtons = () => {
+          btnAll.classList.toggle("mml-pw-active", showAll);
+          btnHover.classList.toggle("mml-pw-active", hoverMode);
+        };
+        refreshButtons();
+
+        const clearHover = () => {
+          const old = [...hoverSet];
+          hoverSet.clear();
+          old.forEach(apply);
+        };
+
+        btnAll.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showAll = !showAll;
+          try { GM_setValue(KEY.all, showAll); } catch {}
+          refreshButtons();
+          applyAll();
+        });
+        btnHover.addEventListener("click", (e) => {
+          e.stopPropagation();
+          hoverMode = !hoverMode;
+          try { GM_setValue(KEY.hover, hoverMode); } catch {}
+          refreshButtons();
+          if (!hoverMode) clearHover();
+          applyAll();
+        });
+
+        // ---------- Abrir/cerrar la fila (compacto) ----------
+        const placeRow = () => {
+          if (!row.classList.contains("mml-pw-open")) return;
+          row.classList.remove("mml-pw-row-left");
+          row.classList.add("mml-pw-row-right");
+          const r = row.getBoundingClientRect();
+          // Si abrirlo hacia la derecha se saldría de pantalla, se abre
+          // hacia la izquierda.
+          if (r.right > window.innerWidth - 4) {
+            row.classList.remove("mml-pw-row-right");
+            row.classList.add("mml-pw-row-left");
+          }
+        };
+        const setOpen = (open) => {
+          row.classList.toggle("mml-pw-open", open);
+          fab.classList.toggle("mml-pw-active", open);
+          try { GM_setValue(KEY.open, open ? "1" : "0"); } catch {}
+          if (open) placeRow();
+        };
+
+        // ---------- Arrastrar el FAB (posición persistida por sitio) ----------
+        const setToolbarPos = (x, y) => {
+          const w = 38, h = 38;
+          x = clamp(x, 4, window.innerWidth - w - 4);
+          y = clamp(y, 4, window.innerHeight - h - 4);
+          toolbar.style.left = `${x}px`;
+          toolbar.style.top = `${y}px`;
+          return { x, y };
+        };
+
+        const savedX = Number(GM_getValue(KEY.x, DEFAULT_POS.x));
+        const savedY = Number(GM_getValue(KEY.y, DEFAULT_POS.y));
+        setToolbarPos(savedX, window.innerHeight - savedY - 38);
+        setOpen(GM_getValue(KEY.open, "0") === "1");
+
+        let dragging = false;
+        let moved = false;
+        let dragStartX = 0, dragStartY = 0, dragStartLeft = 0, dragStartTop = 0;
+
+        const onDragStart = (e) => {
+          dragging = true;
+          moved = false;
+          fab.classList.add("mml-pw-dragging");
+          fab.setPointerCapture(e.pointerId);
+          dragStartX = e.clientX;
+          dragStartY = e.clientY;
+          const r = toolbar.getBoundingClientRect();
+          dragStartLeft = r.left;
+          dragStartTop = r.top;
+        };
+        const onDragMove = (e) => {
+          if (!dragging) return;
+          if (Math.abs(e.clientX - dragStartX) > 3 || Math.abs(e.clientY - dragStartY) > 3) moved = true;
+          if (!moved) return;
+          const pos = setToolbarPos(
+            dragStartLeft + (e.clientX - dragStartX),
+            dragStartTop + (e.clientY - dragStartY)
+          );
+          GM_setValue(KEY.x, pos.x);
+          GM_setValue(KEY.y, window.innerHeight - pos.y - 38);
+          placeRow();
+        };
+        const onDragEnd = (e) => {
+          if (!dragging) return;
+          dragging = false;
+          fab.classList.remove("mml-pw-dragging");
+          try { fab.releasePointerCapture(e.pointerId); } catch {}
+          // Sin arrastre real = click: abrir/cerrar la fila.
+          if (!moved) setOpen(!row.classList.contains("mml-pw-open"));
+        };
+        fab.addEventListener("pointerdown", onDragStart);
+        fab.addEventListener("pointermove", onDragMove);
+        fab.addEventListener("pointerup", onDragEnd);
+        fab.addEventListener("pointercancel", onDragEnd);
+
+        const onWindowResize = () => {
+          const r = toolbar.getBoundingClientRect();
+          setToolbarPos(r.left, r.top);
+          placeRow();
+        };
+        window.addEventListener("resize", onWindowResize);
+
+        // ---------- Modo "al pasar el mouse" ----------
+        // Se revisa en cada movimiento qué campo de contraseña hay bajo el
+        // cursor (por coordenadas, no por mouseover), así el campo sigue
+        // "hovered" aunque el sitio ponga encima su propio ojito o ícono.
+        let mx = 0, my = 0, hoverRaf = false;
+
+        const processHover = () => {
+          hoverRaf = false;
+          if (!hoverMode && hoverSet.size === 0) return;
+
+          const now = new Set();
+          if (hoverMode) {
+            const el = document.elementFromPoint(mx, my);
+            if (el) {
+              allInputs().forEach((input) => {
+                const r = input.getBoundingClientRect();
+                if (r.width <= 0 || r.height <= 0) return;
+                if (mx < r.left || mx > r.right || my < r.top || my > r.bottom) return;
+                if (
+                  el === input ||
+                  el.contains(input) ||
+                  input.parentElement?.contains(el)
+                ) now.add(input);
+              });
             }
           }
-          return false;
-        };
 
-        // ── APLICAR ESTADO ──────────────────────────────────────────
-        const applyState = (input, entry, showing) => {
-          input.type = showing ? "text" : "password";
-          entry.toggle.textContent = showing ? "🙈" : "👁";
-          entry.applied = showing;
-        };
-
-        const applyAll = () => {
-          tracked.forEach((entry, input) => {
-            if (entry.skipped !== null) applyState(input, entry, globalShow);
-          });
-        };
-
-        const evaluate = (input, entry) => {
-          const res = detectNative(input);
-          if (res === null) return;
-          const isNative = !!res;
-          if (isNative) entry.nativeEl = res;
-          if (isNative === entry.skipped) return;
-          entry.skipped = isNative;
-          // Con o sin ojito nativo, aplicamos el estado global. La
-          // diferencia: si hay ojito nativo, ocultamos el nuestro.
-          if (isNative) entry.toggle.style.display = "none";
-          applyState(input, entry, globalShow);
-        };
-
-        // ── POSICIÓN ────────────────────────────────────────────────
-        const positionToggle = (input, entry) => {
-          const toggle = entry.toggle;
-          if (entry.skipped !== false) {
-            toggle.style.display = "none";
-            return;
-          }
-          const rect = input.getBoundingClientRect();
-          const cs = getComputedStyle(input);
-          const visible =
-            rect.width > 0 &&
-            rect.height > 0 &&
-            input.isConnected &&
-            cs.visibility !== "hidden" &&
-            cs.display !== "none";
-
-          if (!visible) {
-            toggle.style.display = "none";
-            return;
-          }
-
-          toggle.style.display = "flex";
-          const size = Math.min(22, rect.height);
-          toggle.style.width = `${size}px`;
-          toggle.style.height = `${size}px`;
-          toggle.style.left = `${rect.right - size - 6}px`;
-          toggle.style.top = `${rect.top + (rect.height - size) / 2}px`;
-        };
-
-        const tick = () => {
-          frame++;
-          // Re-evaluar la presencia de ojito nativo ~2 veces por segundo
-          // (algunos sitios lo dibujan tarde).
-          if (frame % 30 === 0) tracked.forEach((entry, input) => evaluate(input, entry));
-          tracked.forEach((entry, input) => positionToggle(input, entry));
-          rafId = requestAnimationFrame(tick);
-        };
-        const startLoop = () => {
-          if (rafId == null) rafId = requestAnimationFrame(tick);
-        };
-        const stopLoop = () => {
-          if (rafId != null) cancelAnimationFrame(rafId);
-          rafId = null;
-        };
-
-        const removeToggleFor = (input) => {
-          const entry = tracked.get(input);
-          if (!entry) return;
-          entry.toggle.remove();
-          tracked.delete(input);
-        };
-
-        const wrapInput = (input) => {
-          if (tracked.has(input)) return;
-          if (!input.isConnected) return;
-
-          const toggle = document.createElement("span");
-          toggle.className = "mml-pw-toggle";
-          toggle.title = "Mostrar/ocultar contraseña (todos los sitios)";
-          toggle.textContent = "👁";
-          toggle.style.display = "none"; // oculto hasta decidir si hay ojito nativo
-
-          // skipped: null = sin decidir, true = ojito nativo, false = usamos el nuestro
-          const entry = { toggle, skipped: null, applied: false };
-
-          toggle.addEventListener("mousedown", (e) => e.preventDefault()); // no robar el foco
-          toggle.addEventListener("click", () => {
-            globalShow = !globalShow;
-            try { GM_setValue(GLOBAL_KEY, globalShow); } catch {}
-            applyAll();
-          });
-
-          document.body.appendChild(toggle);
-          tracked.set(input, entry);
-          startLoop();
-
-          // Primera evaluación rápida (el ojito nativo suele existir ya).
-          setTimeout(() => {
-            if (tracked.get(input) === entry) evaluate(input, entry);
-          }, 250);
-
-          // Si el sitio elimina/reemplaza el input, quitamos su ícono.
-          const cleanupObserver = new MutationObserver(() => {
-            if (!input.isConnected) {
-              cleanupObserver.disconnect();
-              removeToggleFor(input);
-              if (tracked.size === 0) stopLoop();
+          [...hoverSet].forEach((i) => {
+            if (!now.has(i)) {
+              hoverSet.delete(i);
+              apply(i);
             }
           });
-          cleanupObserver.observe(document.body, { childList: true, subtree: true });
+          now.forEach((i) => {
+            if (!hoverSet.has(i)) {
+              hoverSet.add(i);
+              apply(i);
+            }
+          });
+        };
+
+        const onMove = (e) => {
+          if (!hoverMode && hoverSet.size === 0) return;
+          mx = e.clientX;
+          my = e.clientY;
+          if (!hoverRaf) {
+            hoverRaf = true;
+            requestAnimationFrame(processHover);
+          }
+        };
+        const onLeaveWindow = (e) => {
+          if (!e.relatedTarget && hoverSet.size) clearHover();
+        };
+        document.addEventListener("mousemove", onMove, { capture: true, passive: true });
+        document.addEventListener("mouseout", onLeaveWindow, true);
+
+        // ---------- Detectar campos de contraseña ----------
+        const mark = (input) => {
+          if (!input.hasAttribute("data-mml-pw")) input.setAttribute("data-mml-pw", "1");
+        };
+        const handleInput = (input) => {
+          mark(input);
+          apply(input);
+        };
+
+        let visRaf = false;
+        const updateToolbarVisibility = () => {
+          visRaf = false;
+          if (ALWAYS_SHOW_TOOLBAR) return;
+          const has = !!document.querySelector(INPUT_SEL);
+          const wasHidden = toolbar.style.display === "none";
+          toolbar.style.display = has ? "" : "none";
+          if (has && wasHidden) {
+            const r = toolbar.getBoundingClientRect();
+            setToolbarPos(r.left || savedX, r.top || (window.innerHeight - savedY - 38));
+            placeRow();
+          }
+        };
+        const scheduleVisibility = () => {
+          if (visRaf) return;
+          visRaf = true;
+          requestAnimationFrame(updateToolbarVisibility);
         };
 
         const scan = (root = document) => {
-          root.querySelectorAll?.('input[type="password"]').forEach(wrapInput);
+          root.querySelectorAll?.('input[type="password"]').forEach(handleInput);
         };
 
         scan();
+        scheduleVisibility();
 
-        // Formularios inyectados después (modales, SPA, etc.).
+        // Formularios inyectados después (modales, SPA, "iniciar sesión"
+        // que aparece recién al hacer clic).
         const observer = new MutationObserver((mutations) => {
           for (const m of mutations) {
             for (const node of m.addedNodes) {
               if (node.nodeType !== 1) continue;
-              if (node.matches?.('input[type="password"]')) wrapInput(node);
+              if (node.matches?.('input[type="password"]')) handleInput(node);
               else scan(node);
             }
           }
+          scheduleVisibility();
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
 
-        const onReposition = () => tracked.forEach((entry, input) => positionToggle(input, entry));
-        window.addEventListener("scroll", onReposition, true);
-        window.addEventListener("resize", onReposition);
-
-        // Clic en el ojito NATIVO del sitio: tras el clic, si el campo
-        // cambió de tipo, ese nuevo estado pasa a ser el global.
-        // (Se ignoran cambios que no vengan de un clic, p. ej. re-renders.)
-        const onNativeClick = (e) => {
-          tracked.forEach((entry, input) => {
-            if (entry.skipped !== true || e.target === input) return;
-            const r = input.getBoundingClientRect();
-            const inside =
-              e.clientX >= r.left && e.clientX <= r.right + 8 &&
-              e.clientY >= r.top && e.clientY <= r.bottom;
-            if (!inside) return;
-            setTimeout(() => {
-              const newShow = input.type === "text";
-              if (newShow === globalShow) return;
-              globalShow = newShow;
-              try { GM_setValue(GLOBAL_KEY, globalShow); } catch {}
-              applyAll();
-            }, 80);
-          });
-        };
-        document.addEventListener("click", onNativeClick, true);
-
-        // Sincronizar con otras pestañas/sitios: sin necesidad de
-        // @grant GM_addValueChangeListener, consultamos cada segundo.
+        // ---------- Sincronizar con otras pestañas/sitios ----------
+        // Consultamos GM_getValue cada segundo (no requiere permisos extra).
         const syncTimer = setInterval(() => {
-          let v;
-          try { v = !!GM_getValue(GLOBAL_KEY, false); } catch { return; }
-          if (v !== globalShow) {
-            globalShow = v;
-            applyAll();
-          }
+          let a, h;
+          try {
+            a = !!GM_getValue(KEY.all, false);
+            h = !!GM_getValue(KEY.hover, false);
+          } catch { return; }
+          if (a === showAll && h === hoverMode) return;
+          showAll = a;
+          hoverMode = h;
+          refreshButtons();
+          if (!hoverMode) clearHover();
+          applyAll();
         }, 1000);
 
         this._cleanup = () => {
           observer.disconnect();
           clearInterval(syncTimer);
-          document.removeEventListener("click", onNativeClick, true);
-          stopLoop();
-          window.removeEventListener("scroll", onReposition, true);
-          window.removeEventListener("resize", onReposition);
-          tracked.forEach((entry, input) => {
-            entry.toggle.remove();
-            if (entry.applied) input.type = "password";
+          document.removeEventListener("mousemove", onMove, true);
+          document.removeEventListener("mouseout", onLeaveWindow, true);
+          window.removeEventListener("resize", onWindowResize);
+          fab.removeEventListener("pointerdown", onDragStart);
+          fab.removeEventListener("pointermove", onDragMove);
+          fab.removeEventListener("pointerup", onDragEnd);
+          fab.removeEventListener("pointercancel", onDragEnd);
+
+          // Devolver los campos a su estado original.
+          allInputs().forEach((input) => {
+            if (shownByUs.has(input)) input.type = "password";
+            input.removeAttribute("data-mml-pw");
           });
-          tracked.clear();
-          // Al apagar el módulo volvemos a "oculto" en todos lados.
-          try { GM_setValue(GLOBAL_KEY, false); } catch {}
+          shownByUs.clear();
+          hoverSet.clear();
+          toolbar.remove();
           this.active = false;
         };
       },
