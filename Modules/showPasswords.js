@@ -20,9 +20,11 @@
         const ALWAYS_SHOW_TOOLBAR = false;
 
         // ---------- Config / persistencia ----------
-        // Los modos son GLOBALES (GM_setValue se comparte entre todos los
-        // sitios y pestañas). La posición del panel se guarda por sitio.
-        const SITE = location.hostname || "default";
+        // Todo es GLOBAL (GM_setValue se comparte entre todos los sitios y
+        // pestañas): los modos, la posición del panel y si está abierto.
+        // Si algún día quieres posición por sitio, usa:
+        //   const SITE = location.hostname || "default";
+        const SITE = "global";
         const KEY = {
           all: "mml_pw_mode_all",
           hover: "mml_pw_mode_hover",
