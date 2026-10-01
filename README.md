@@ -1,6 +1,6 @@
 # Multi Modules Lite
 
-**Última Actualización:** 03 de agosto de 2026
+**Última Actualización:** 30 de septiembre de 2026
 
 Framework modular para **Tampermonkey** que reúne múltiples mejoras para distintos sitios web en un único UserScript. Cada función se encuentra implementada como un módulo independiente que puede activarse o desactivarse individualmente desde un panel flotante moderno.
 
@@ -70,6 +70,12 @@ Actualmente el proyecto incluye los siguientes módulos:
 
 - 🔊 **YouTube Volume Boost**
   - Permite aumentar el volumen por encima del límite normal.
+
+- 🎧 **YouTube Audio Sync**
+  - Corrige videos cuyo audio va adelantado respecto a la imagen, atrasándolo en milisegundos.
+  - Botón ⏱ en el reproductor con slider y ajuste fino (±10 / ±50 ms).
+  - El ajuste se recuerda por video y se desactiva durante los anuncios.
+  - Comparte la cadena de audio con Volume Boost (ambos dependen de `Modules/ytAudioSync.js`).
 
 - 💬 **YouTube Toggle Comments**
   - Permite mostrar u ocultar rápidamente la sección de comentarios.
