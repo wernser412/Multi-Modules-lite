@@ -13,8 +13,15 @@
 
         if (!location.hostname.includes("youtube.com")) return;
 
+        // Cadena de audio compartida con ytAudioSync (definida en ytAudioSync.js):
+        // un <video> solo admite un MediaElementSource.
+        const graph = window.__MML_AUDIO;
+        if (!graph) {
+          console.warn("[ytVolumeBoost] Falta ytAudioSync.js (@require): ahí vive la cadena de audio compartida.");
+          return;
+        }
+
         const VOL_KEY = "vh_volume_level";
-        let ctx, gainNode;
         let btn, popup, label, slider;
         let videoObserver, controlsObserver, outsideClickHandler;
 
@@ -24,25 +31,16 @@
 
         const connectVideo = (video) => {
           if (!video || connected.has(video)) return;
-          if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-          if (!gainNode) {
-            gainNode = ctx.createGain();
-            gainNode.connect(ctx.destination);
-          }
-          try {
-            const source = ctx.createMediaElementSource(video);
-            source.connect(gainNode);
-            connected.add(video);
-            gainNode.gain.value = getSaved() / 100;
-          } catch {
-            // El video ya tiene un source node (p.ej. otra extensión); lo ignoramos.
-          }
+          // Si el video ya tiene un source node de otra extensión, attach() devuelve false.
+          if (!graph.attach(video)) return;
+          connected.add(video);
+          graph.setGain(getSaved() / 100);
         };
 
         const applyValue = (val) => {
           const video = document.querySelector("video");
           connectVideo(video);
-          if (gainNode) gainNode.gain.value = val / 100;
+          graph.setGain(val / 100);
           if (label) label.textContent = val + "%";
           localStorage.setItem(VOL_KEY, val);
         };
@@ -169,9 +167,9 @@
           videoObserver?.disconnect();
           closePopup();
           document.getElementById("vh-volume-btn")?.remove();
-          ctx?.close?.();
-          ctx = null;
-          gainNode = null;
+          // No se cierra el AudioContext (dejaría el video mudo y rompería
+          // ytAudioSync): solo se vuelve a volumen normal.
+          graph.setGain(1);
         };
       },
 
