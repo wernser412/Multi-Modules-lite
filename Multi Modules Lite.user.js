@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.09.30
+// @version      2026.11.03
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -45,6 +45,60 @@ const Core = {
 
 const FAB_VISIBLE_KEY = "mml_fab_visible";
 
+/********************************************************
+ SITIOS POR MÓDULO
+ Cada módulo puede tener una lista de patrones. Lista vacía = todos
+ los sitios. Ejemplos de patrones:
+   youtube.com          -> youtube.com y subdominios (www., m., ...)
+   *.google.com         -> cualquier subdominio de google.com
+   reddit.com/r/*       -> solo URLs que empiecen así (host + ruta)
+   !mail.google.com     -> EXCLUIR este sitio (aunque otro patrón coincida)
+********************************************************/
+Core.sites = GM_getValue("modules_lite_sites", {}) || {};
+
+function saveSites() {
+  GM_setValue("modules_lite_sites", Core.sites);
+}
+
+function getSites(name) {
+  const own = Core.sites[name];
+  if (Array.isArray(own)) return own;
+  const def = Core.modules[name]?.sites; // valor por defecto opcional definido en el módulo
+  return Array.isArray(def) ? def : [];
+}
+
+function globToRegex(glob) {
+  const esc = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp("^" + esc + "$");
+}
+
+function patternMatches(pattern) {
+  const p = pattern.trim().toLowerCase().replace(/^https?:\/\//, "");
+  if (!p) return false;
+  const host = location.hostname.toLowerCase();
+  if (p.includes("/")) {
+    const target = host + location.pathname.toLowerCase();
+    const re = globToRegex(p.endsWith("*") ? p : p + "*");
+    // acepta también subdominios (www.reddit.com para "reddit.com/r/*")
+    return re.test(target) || (!p.startsWith("*") && globToRegex("*." + (p.endsWith("*") ? p : p + "*")).test(target));
+  }
+  if (p.includes("*")) return globToRegex(p).test(host);
+  return host === p || host.endsWith("." + p);
+}
+
+function siteAllowed(name) {
+  const list = getSites(name);
+  if (!list.length) return true;
+  const excludes = list.filter(x => x.trim().startsWith("!")).map(x => x.trim().slice(1));
+  const includes = list.filter(x => !x.trim().startsWith("!"));
+  if (excludes.some(patternMatches)) return false;
+  return includes.length === 0 || includes.some(patternMatches);
+}
+
+function parseSites(text) {
+  return text.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+}
+
 function save() {
   GM_setValue("modules_lite_pro", Core.settings);
 }
@@ -61,24 +115,32 @@ function register(name, mod) {
 // Procesa todo lo que los archivos @require dejaron en la cola global.
 (window.__MML_QUEUE || []).forEach(({ name, mod }) => register(name, mod));
 
-function toggle(name, on) {
+// Enciende/apaga el módulo según: interruptor global + sitio actual permitido.
+function apply(name) {
   const m = Core.modules[name];
   if (!m) return;
-  Core.settings[name] = on;
-  save();
-  if (on) {
+  const shouldRun = Core.settings[name] === true && siteAllowed(name);
+  if (shouldRun && !m.enabled) {
     try {
       m.enable?.();
       m.enabled = true;
     } catch (e) {
       console.error("Enable error:", name, e);
     }
-  } else {
+  } else if (!shouldRun && m.enabled) {
     try {
       m.disable?.();
     } catch {}
     m.enabled = false;
   }
+}
+
+function toggle(name, on) {
+  const m = Core.modules[name];
+  if (!m) return;
+  Core.settings[name] = on;
+  save();
+  apply(name);
   updateBadge();
 }
 
@@ -163,6 +225,32 @@ const THEME = `
   .mml-switch input:checked + .mml-slider { background:#00c48c; }
   .mml-switch input:checked + .mml-slider::before { transform:translateX(16px); }
 
+  .mml-item.mml-off .mml-row { opacity:.45; }
+  .mml-sitebtn {
+    background:none; border:none; cursor:pointer; font-size:13px; padding:2px 4px;
+    border-radius:6px; opacity:.45; flex:none;
+  }
+  .mml-sitebtn:hover { opacity:1; background:rgba(255,255,255,.08); }
+  .mml-sitebtn.on { opacity:1; }
+  .mml-rowright { display:flex; align-items:center; gap:4px; flex:none; }
+  .mml-sites {
+    display:none; margin:-2px 0 6px; padding:8px 10px; background:#181b20;
+    border-radius:0 0 10px 10px; border:1px solid rgba(255,255,255,.05);
+  }
+  .mml-sites.open { display:block; }
+  .mml-sites .mml-hint { font-size:10.5px; color:#8a8f98; margin-bottom:6px; line-height:1.35; }
+  .mml-sites input[type=text] {
+    width:100%; box-sizing:border-box; background:#0f1114; color:#eee;
+    border:1px solid #3a3d44; border-radius:7px; padding:6px 8px; font-size:12px; outline:none;
+  }
+  .mml-sites input[type=text]:focus { border-color:#60a5fa; }
+  .mml-sites .mml-sitebtns { display:flex; gap:6px; margin-top:6px; }
+  .mml-sites .mml-sitebtns button {
+    background:rgba(255,255,255,.08); border:none; color:#ddd; font-size:11px;
+    padding:4px 8px; border-radius:7px; cursor:pointer;
+  }
+  .mml-sites .mml-sitebtns button:hover { background:rgba(255,255,255,.16); }
+
   #mml-panel .mml-foot { padding:6px 12px 10px; font-size:10px; color:#666; text-align:center; border-top:1px solid rgba(255,255,255,.05); }
 `;
 
@@ -199,7 +287,7 @@ function handleFullscreenChange() {
 
 function updateBadge() {
   if (!badge) return;
-  const count = Object.values(Core.modules).filter(m => m.enabled).length;
+  const count = Object.values(Core.modules).filter(m => m.enabled).length; // solo los que corren en ESTE sitio
   badge.textContent = count;
   badge.style.display = count > 0 ? "flex" : "none";
 }
@@ -381,6 +469,9 @@ function render() {
     body.appendChild(catLabel);
 
     mods.forEach(m => {
+      const item = document.createElement("div");
+      item.className = "mml-item";
+
       const row = document.createElement("div");
       row.className = "mml-row";
 
@@ -392,12 +483,28 @@ function render() {
       titleEl.textContent = m.title || m.name;
       label.appendChild(titleEl);
 
-      if (m.desc) {
-        const descEl = document.createElement("div");
-        descEl.className = "mml-desc";
-        descEl.textContent = m.desc;
-        label.appendChild(descEl);
+      const sites = getSites(m.name);
+      const allowedHere = siteAllowed(m.name);
+
+      const descEl = document.createElement("div");
+      descEl.className = "mml-desc";
+      if (sites.length) {
+        descEl.textContent = (allowedHere ? "🌐 " : "🚫 No activo aquí · 🌐 ") + sites.join(", ");
+      } else {
+        descEl.textContent = m.desc || "";
       }
+      if (descEl.textContent) label.appendChild(descEl);
+
+      item.classList.toggle("mml-off", !allowedHere);
+
+      // Botón 🌐 + interruptor
+      const right = document.createElement("div");
+      right.className = "mml-rowright";
+
+      const siteBtn = document.createElement("button");
+      siteBtn.className = "mml-sitebtn" + (sites.length ? " on" : "");
+      siteBtn.textContent = "🌐";
+      siteBtn.title = "Elegir en qué sitios funciona este módulo";
 
       const sw = document.createElement("label");
       sw.className = "mml-switch";
@@ -411,8 +518,67 @@ function render() {
       slider.className = "mml-slider";
 
       sw.append(cb, slider);
-      row.append(label, sw);
-      body.appendChild(row);
+      right.append(siteBtn, sw);
+      row.append(label, right);
+
+      // Editor de sitios (desplegable)
+      const editor = document.createElement("div");
+      editor.className = "mml-sites";
+
+      const hint = document.createElement("div");
+      hint.className = "mml-hint";
+      hint.textContent = "Sitios donde funciona (separados por coma). Vacío = todos. " +
+        "Ej: youtube.com, *.google.com, reddit.com/r/*. Con ! se excluye: !mail.google.com";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "youtube.com, !music.youtube.com";
+      input.value = sites.join(", ");
+
+      const btns = document.createElement("div");
+      btns.className = "mml-sitebtns";
+
+      const bThis = document.createElement("button");
+      bThis.textContent = "＋ Este sitio";
+      bThis.onclick = () => {
+        const list = parseSites(input.value);
+        const host = location.hostname.replace(/^www\./, "");
+        if (!list.includes(host)) list.push(host);
+        input.value = list.join(", ");
+      };
+
+      const bSave = document.createElement("button");
+      bSave.textContent = "Guardar";
+      bSave.onclick = () => {
+        Core.sites[m.name] = parseSites(input.value);
+        saveSites();
+        apply(m.name);
+        updateBadge();
+        render();
+      };
+
+      const bAll = document.createElement("button");
+      bAll.textContent = "Todos los sitios";
+      bAll.onclick = () => {
+        Core.sites[m.name] = [];
+        saveSites();
+        apply(m.name);
+        updateBadge();
+        render();
+      };
+
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") bSave.click();
+      });
+
+      btns.append(bThis, bSave, bAll);
+      editor.append(hint, input, btns);
+
+      siteBtn.onclick = () => editor.classList.toggle("open");
+
+      item.append(row, editor);
+      body.appendChild(item);
     });
   });
 }
@@ -430,8 +596,9 @@ const wait = setInterval(() => {
 
   setTimeout(() => {
     Object.keys(Core.modules).forEach(name => {
-      if (Core.settings[name] === true) toggle(name, true);
+      apply(name); // respeta interruptor + lista de sitios
     });
+    updateBadge();
   }, 0);
 
 }, 50);
