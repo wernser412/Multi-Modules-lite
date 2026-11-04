@@ -109,7 +109,16 @@
           state = "STARTED";
         }
 
+        // Los clics sobre la interfaz propia de Multi Modules (íconos de
+        // selección 🧮/🔎/🌐, burbujas, cajas, panel ⚙) nunca deben bloquearse
+        // ni iniciar una selección: si no, mientras hay texto seleccionado
+        // (justo cuando aparecen esos íconos) ningún clic les llegaría.
+        const isOwnUI = e => !!e.target?.closest?.(
+          '[class^="mml-"], [class*=" mml-"], [id^="mml-"]'
+        );
+
         const onMouseDown = e => {
+          if (isOwnUI(e)) return;
           if (state !== "WAITING") return;
           if (e.button !== 0 || e.altKey) return;
 
@@ -158,6 +167,7 @@
         };
 
         const onClick = e => {
+          if (isOwnUI(e)) return;
           if (state === "ENDING" || hasRealSelection(e)) {
             // Hubo una selección de texto real: no dejar que el click
             // dispare una navegación. Esto cubre <a> normales, tarjetas
