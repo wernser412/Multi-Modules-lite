@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.11.03
+// @version      2026.11.05
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -47,24 +47,47 @@ const FAB_VISIBLE_KEY = "mml_fab_visible";
 
 /********************************************************
  SITIOS POR MÓDULO
- Cada módulo puede tener una lista de patrones. Lista vacía = todos
- los sitios. Ejemplos de patrones:
+ Cada módulo tiene un interruptor "Todos los sitios". Si está apagado,
+ debe tener al menos un sitio en su lista. Ejemplos de patrones:
    youtube.com          -> youtube.com y subdominios (www., m., ...)
    *.google.com         -> cualquier subdominio de google.com
    reddit.com/r/*       -> solo URLs que empiecen así (host + ruta)
    !mail.google.com     -> EXCLUIR este sitio (aunque otro patrón coincida)
 ********************************************************/
-Core.sites = GM_getValue("modules_lite_sites", {}) || {};
+// Formato guardado por módulo: { all: true/false, list: ["youtube.com", ...] }
+//   all = true  -> funciona en TODOS los sitios (la lista se ignora)
+//   all = false -> funciona SOLO en los sitios de la lista (mínimo 1)
+function normalizeCfg(v) {
+  if (Array.isArray(v)) {                       // formato viejo: lista simple
+    const list = v.map(String).filter(Boolean);
+    return { all: !list.some(x => !x.startsWith("!")), list };
+  }
+  if (v && typeof v === "object") {
+    const list = Array.isArray(v.list) ? v.list.map(String).filter(Boolean) : [];
+    const hasSite = list.some(x => !x.trim().startsWith("!"));
+    return { all: v.all === true || !hasSite, list };
+  }
+  return null;
+}
+
+Core.sites = {};
+Object.entries(GM_getValue("modules_lite_sites", {}) || {}).forEach(([k, v]) => {
+  const c = normalizeCfg(v);
+  if (c) Core.sites[k] = c;
+});
 
 function saveSites() {
   GM_setValue("modules_lite_sites", Core.sites);
 }
 
-function getSites(name) {
-  const own = Core.sites[name];
-  if (Array.isArray(own)) return own;
-  const def = Core.modules[name]?.sites; // valor por defecto opcional definido en el módulo
-  return Array.isArray(def) ? def : [];
+function getCfg(name) {
+  if (Core.sites[name]) return Core.sites[name];
+  const def = normalizeCfg(Core.modules[name]?.sites); // sitios por defecto opcionales del módulo
+  return def || { all: true, list: [] };
+}
+
+function hasSite(list) {
+  return list.some(x => !x.trim().startsWith("!"));
 }
 
 function globToRegex(glob) {
@@ -87,12 +110,12 @@ function patternMatches(pattern) {
 }
 
 function siteAllowed(name) {
-  const list = getSites(name);
-  if (!list.length) return true;
-  const excludes = list.filter(x => x.trim().startsWith("!")).map(x => x.trim().slice(1));
-  const includes = list.filter(x => !x.trim().startsWith("!"));
+  const cfg = getCfg(name);
+  if (cfg.all) return true;
+  const excludes = cfg.list.filter(x => x.trim().startsWith("!")).map(x => x.trim().slice(1));
+  const includes = cfg.list.filter(x => !x.trim().startsWith("!"));
   if (excludes.some(patternMatches)) return false;
-  return includes.length === 0 || includes.some(patternMatches);
+  return includes.some(patternMatches);
 }
 
 function parseSites(text) {
@@ -195,7 +218,8 @@ const THEME = `
     border-bottom:1px solid rgba(255,255,255,.06);
   }
   #mml-panel .mml-head b { font-size:14px; letter-spacing:.2px; }
-  #mml-panel .mml-headbtns { display:flex; gap:6px; }
+  #mml-panel .mml-head { flex-wrap:wrap; gap:8px; }
+  #mml-panel .mml-headbtns { display:flex; gap:6px; flex-wrap:wrap; }
   #mml-panel .mml-headbtn {
     background:rgba(255,255,255,.06); border:none; color:#ccc; font-size:11px;
     padding:4px 8px; border-radius:7px; cursor:pointer;
@@ -238,6 +262,7 @@ const THEME = `
     border-radius:0 0 10px 10px; border:1px solid rgba(255,255,255,.05);
   }
   .mml-sites.open { display:block; }
+  .mml-allrow { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:#eee; margin-bottom:6px; }
   .mml-sites .mml-hint { font-size:10.5px; color:#8a8f98; margin-bottom:6px; line-height:1.35; }
   .mml-sites input[type=text] {
     width:100%; box-sizing:border-box; background:#0f1114; color:#eee;
@@ -347,6 +372,67 @@ function toggleFabVisibility() {
   applyFabVisibility();
 }
 
+/********************************************************
+ EXPORTAR / IMPORTAR (JSON)
+********************************************************/
+
+function exportConfig() {
+  const data = {
+    app: "Multi Modules Lite",
+    version: 1,
+    exported: new Date().toISOString(),
+    settings: Core.settings, // { nombreModulo: true/false }
+    sites: Core.sites        // { nombreModulo: { all: true/false, list: ["youtube.com", ...] } }
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "multi-modules-lite-config.json";
+  document.documentElement.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function importConfig() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || typeof data !== "object" || typeof data.settings !== "object") {
+          throw new Error("formato inválido");
+        }
+        const settings = {};
+        Object.entries(data.settings || {}).forEach(([k, v]) => { settings[k] = v === true; });
+        const sites = {};
+        Object.entries(data.sites || {}).forEach(([k, v]) => {
+          const c = normalizeCfg(v);
+          if (c) sites[k] = c;
+        });
+        Core.settings = settings;
+        Core.sites = sites;
+        save();
+        saveSites();
+        Object.keys(Core.modules).forEach(apply);
+        updateBadge();
+        render();
+        alert("Configuración importada correctamente.");
+      } catch (e) {
+        alert("No se pudo importar: el archivo no es un JSON válido de Multi Modules Lite.");
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
 function createUI() {
   // Evita crear una segunda UI si el script ya corrió en este documento
   // (p. ej. por doble inyección) — simplemente resincroniza y sale.
@@ -396,7 +482,19 @@ function createUI() {
     render();
   };
 
-  headBtns.append(btnAll, btnNone);
+  const btnExport = document.createElement("button");
+  btnExport.className = "mml-headbtn";
+  btnExport.textContent = "⬇ Exportar";
+  btnExport.title = "Guardar módulos activados y sitios en un archivo JSON";
+  btnExport.onclick = exportConfig;
+
+  const btnImport = document.createElement("button");
+  btnImport.className = "mml-headbtn";
+  btnImport.textContent = "⬆ Importar";
+  btnImport.title = "Cargar un archivo JSON exportado antes";
+  btnImport.onclick = importConfig;
+
+  headBtns.append(btnAll, btnNone, btnExport, btnImport);
   head.append(title, headBtns);
 
   const body = document.createElement("div");
@@ -452,6 +550,8 @@ function observeFab() {
   }, 1500);
 }
 
+const openEditors = new Set(); // editores 🌐 abiertos (se conservan al redibujar)
+
 function render() {
   if (!panel) return;
   const body = panel.querySelector(".mml-body");
@@ -483,7 +583,8 @@ function render() {
       titleEl.textContent = m.title || m.name;
       label.appendChild(titleEl);
 
-      const sites = getSites(m.name);
+      const cfg = getCfg(m.name);
+      const sites = cfg.all ? [] : cfg.list;
       const allowedHere = siteAllowed(m.name);
 
       const descEl = document.createElement("div");
@@ -502,7 +603,7 @@ function render() {
       right.className = "mml-rowright";
 
       const siteBtn = document.createElement("button");
-      siteBtn.className = "mml-sitebtn" + (sites.length ? " on" : "");
+      siteBtn.className = "mml-sitebtn" + (!cfg.all ? " on" : "");
       siteBtn.textContent = "🌐";
       siteBtn.title = "Elegir en qué sitios funciona este módulo";
 
@@ -523,17 +624,42 @@ function render() {
 
       // Editor de sitios (desplegable)
       const editor = document.createElement("div");
-      editor.className = "mml-sites";
+      editor.className = "mml-sites" + (openEditors.has(m.name) ? " open" : "");
+
+      const commit = () => {
+        saveSites();
+        apply(m.name);
+        updateBadge();
+        render();
+      };
+
+      // Interruptor "Todos los sitios"
+      const allRow = document.createElement("div");
+      allRow.className = "mml-allrow";
+      const allLabel = document.createElement("span");
+      allLabel.textContent = "🌐 Todos los sitios";
+      const allSw = document.createElement("label");
+      allSw.className = "mml-switch";
+      const allCb = document.createElement("input");
+      allCb.type = "checkbox";
+      allCb.checked = cfg.all;
+      const allSlider = document.createElement("span");
+      allSlider.className = "mml-slider";
+      allSw.append(allCb, allSlider);
+      allRow.append(allLabel, allSw);
+
+      const siteBox = document.createElement("div");
+      siteBox.style.display = cfg.all ? "none" : "block";
 
       const hint = document.createElement("div");
       hint.className = "mml-hint";
-      hint.textContent = "Sitios donde funciona (separados por coma). Vacío = todos. " +
-        "Ej: youtube.com, *.google.com, reddit.com/r/*. Con ! se excluye: !mail.google.com";
+      hint.textContent = "Solo funcionará en estos sitios (separados por coma, mínimo uno). " +
+        "Ej: youtube.com, *.google.com, reddit.com/r/*. Con ! se excluye: !music.youtube.com";
 
       const input = document.createElement("input");
       input.type = "text";
-      input.placeholder = "youtube.com, !music.youtube.com";
-      input.value = sites.join(", ");
+      input.placeholder = "youtube.com";
+      input.value = cfg.list.join(", ");
 
       const btns = document.createElement("div");
       btns.className = "mml-sitebtns";
@@ -550,21 +676,27 @@ function render() {
       const bSave = document.createElement("button");
       bSave.textContent = "Guardar";
       bSave.onclick = () => {
-        Core.sites[m.name] = parseSites(input.value);
-        saveSites();
-        apply(m.name);
-        updateBadge();
-        render();
+        const list = parseSites(input.value);
+        if (!hasSite(list)) {
+          alert("Agrega al menos un sitio, o activa \"Todos los sitios\".");
+          return;
+        }
+        Core.sites[m.name] = { all: false, list };
+        commit();
       };
 
-      const bAll = document.createElement("button");
-      bAll.textContent = "Todos los sitios";
-      bAll.onclick = () => {
-        Core.sites[m.name] = [];
-        saveSites();
-        apply(m.name);
-        updateBadge();
-        render();
+      allCb.onchange = () => {
+        if (allCb.checked) {
+          Core.sites[m.name] = { all: true, list: parseSites(input.value) };
+        } else {
+          // Al apagar "Todos", siempre debe quedar al menos un sitio activo:
+          // si no hay ninguno, se pone el sitio actual.
+          const list = parseSites(input.value);
+          if (!hasSite(list)) list.push(location.hostname.replace(/^www\./, ""));
+          Core.sites[m.name] = { all: false, list };
+        }
+        openEditors.add(m.name);
+        commit();
       };
 
       input.addEventListener("keydown", (e) => {
@@ -572,10 +704,15 @@ function render() {
         if (e.key === "Enter") bSave.click();
       });
 
-      btns.append(bThis, bSave, bAll);
-      editor.append(hint, input, btns);
+      btns.append(bThis, bSave);
+      siteBox.append(hint, input, btns);
+      editor.append(allRow, siteBox);
 
-      siteBtn.onclick = () => editor.classList.toggle("open");
+      siteBtn.onclick = () => {
+        editor.classList.toggle("open");
+        if (editor.classList.contains("open")) openEditors.add(m.name);
+        else openEditors.delete(m.name);
+      };
 
       item.append(row, editor);
       body.appendChild(item);
