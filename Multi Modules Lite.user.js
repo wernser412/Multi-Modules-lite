@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.11.06
+// @version      2026.11.03
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -12,6 +12,8 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 
+// Librería para resolver ecuaciones (usada por mathSelectSolve.js). Sin API ni internet en uso.
+// @require      https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/ultraUnlock.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/imageTooltip.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/linkSelect.js
