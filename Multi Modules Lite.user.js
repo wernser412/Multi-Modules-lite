@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.11.05
+// @version      2026.11.06
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -82,7 +82,11 @@ function saveSites() {
 
 function getCfg(name) {
   if (Core.sites[name]) return Core.sites[name];
-  const def = normalizeCfg(Core.modules[name]?.sites); // sitios por defecto opcionales del módulo
+  // Sitios por defecto: los de la propiedad `sites` del módulo, y si no tiene,
+  // los módulos de categoría "YouTube" quedan fijados a youtube.com.
+  const m = Core.modules[name];
+  const def = normalizeCfg(m?.sites) ||
+    (m?.category === "YouTube" ? { all: false, list: ["youtube.com"] } : null);
   return def || { all: true, list: [] };
 }
 
@@ -395,6 +399,21 @@ function exportConfig() {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+function resetConfig() {
+  if (!confirm("¿Restaurar la configuración de fábrica?\n\n" +
+    "• Todos los módulos quedarán desactivados.\n" +
+    "• Los sitios volverán a los de por defecto (YouTube solo en youtube.com, el resto en todos los sitios).\n\n" +
+    "Tip: usa ⬇ Exportar antes si quieres guardar tu configuración actual.")) return;
+  Core.settings = {};
+  Core.sites = {};
+  save();
+  saveSites();
+  openEditors.clear();
+  Object.keys(Core.modules).forEach(apply);
+  updateBadge();
+  render();
+}
+
 function importConfig() {
   const input = document.createElement("input");
   input.type = "file";
@@ -494,7 +513,13 @@ function createUI() {
   btnImport.title = "Cargar un archivo JSON exportado antes";
   btnImport.onclick = importConfig;
 
-  headBtns.append(btnAll, btnNone, btnExport, btnImport);
+  const btnReset = document.createElement("button");
+  btnReset.className = "mml-headbtn";
+  btnReset.textContent = "↺ Restaurar";
+  btnReset.title = "Deja todo como viene de fábrica: módulos desactivados y sitios por defecto";
+  btnReset.onclick = resetConfig;
+
+  headBtns.append(btnAll, btnNone, btnExport, btnImport, btnReset);
   head.append(title, headBtns);
 
   const body = document.createElement("div");
