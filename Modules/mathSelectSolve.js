@@ -35,7 +35,7 @@
     name: "mathSelectSolve",
     mod: {
       title: "🧮 Resolver selección matemática",
-      desc: "Al seleccionar una operación (ej: 4+5, √9, sen30, 2π, x²) aparece un ícono para ver el resultado",
+      desc: "Al seleccionar texto aparece 🧮: calcula operaciones (4+5, √9, sen30) y resuelve ecuaciones (2x+3=11, x²-5x+6=0, sistemas)",
       category: "General",
 
       enable() {
@@ -333,6 +333,209 @@
           return exprs;
         };
 
+        // ---------- Ecuaciones y álgebra (librería nerdamer, sin API ni internet) ----------
+        // nerdamer se carga con @require desde el userscript principal.
+        const getNerd = () => (typeof nerdamer !== "undefined" ? nerdamer : window.nerdamer);
+
+        const FN_WORDS = /(asin|acos|atan|sinh|cosh|tanh|sin|cos|tan|sqrt|cbrt|log10|log|ln|exp|abs|floor|ceil|round|factorial|pi)/g;
+        const EQ_CHARSET = /^[0-9a-zA-Z.,;:()[\]{}+\-*/^%×÷•·π√∛⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻=\s\u2013\u2014\u2212]+$/;
+
+        // Notación "humana" -> sintaxis de nerdamer (conserva las letras como variables).
+        const normalizeEquation = (text) => {
+          let b = text.replace(/\u200B/g, "").replace(/[\u2013\u2014\u2212]/g, "-");
+          b = b.replace(/[×•·]/g, "*").replace(/÷/g, "/").replace(/π/g, "pi");
+          b = b.replace(/√\(/g, "sqrt(").replace(/√(\d+(?:\.\d+)?|[a-z])/gi, "sqrt($1)");
+          b = b.replace(/(\d+|[a-z]|\))([⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]+)/gi,
+            (m, base, sup) => `${base}^(${[...sup].map((c) => SUPERSCRIPTS[c]).join("")})`);
+          b = b.replace(/sen/gi, "sin");
+          b = b.replace(/(\d),(\d)/g, "$1.$2");
+          b = b.replace(/\s+/g, "");
+          b = b.replace(/[\[{]/g, "(").replace(/[\]}]/g, ")");
+          return b;
+        };
+
+        // Variables de una expresión ya normalizada. null = no parece matemática
+        // (hay "palabras" de 2+ letras que no son funciones).
+        const getVars = (norm) => {
+          const rest = norm.toLowerCase().replace(FN_WORDS, "");
+          if (/[a-z]{2,}/.test(rest)) return null;
+          return [...new Set(rest.match(/[a-z]/g) || [])];
+        };
+
+        // "3 x 4" es multiplicación, no la variable x.
+        const stripTimesX = (t) => t.replace(/(\d)\s*x\s*(?=\d)/gi, "$1*");
+
+        const hasVariable = (text) => {
+          if (!EQ_CHARSET.test(text) || text.length > 200) return false;
+          const vars = getVars(normalizeEquation(stripTimesX(text)));
+          return !!(vars && vars.length);
+        };
+
+        // Líneas que son ecuaciones: exactamente un "=" con algo a cada lado.
+        const getEquationLines = (text) =>
+          text.split(/[\r\n]+/).map((l) => l.trim()).filter((l) => {
+            if (l.length > 200 || !EQ_CHARSET.test(l)) return false;
+            const parts = l.split("=");
+            if (parts.length !== 2) return false;
+            if (!parts[0].trim() || !parts[1].trim()) return false;
+            return getVars(normalizeEquation(l)) !== null;
+          });
+
+        const splitTop = (str) => {
+          const out = []; let depth = 0, cur = "";
+          for (const ch of str) {
+            if (ch === "(" || ch === "[") depth++;
+            if (ch === ")" || ch === "]") depth--;
+            if (ch === "," && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
+          }
+          if (cur) out.push(cur);
+          return out.map((x) => x.trim()).filter(Boolean);
+        };
+
+        const stripOuterParens = (str) => {
+          let t = str.trim();
+          while (t.startsWith("(") && t.endsWith(")")) {
+            let depth = 0, ok = true;
+            for (let i = 0; i < t.length - 1; i++) {
+              if (t[i] === "(") depth++;
+              if (t[i] === ")") depth--;
+              if (depth === 0) { ok = false; break; }
+            }
+            if (!ok) break;
+            t = t.slice(1, -1);
+          }
+          return t;
+        };
+
+        const fmtNum = (n) => String(Number(n.toPrecision(10)));
+        const isComplexStr = (str) => /(^|[^a-z])i([^a-z]|$)/i.test(str);
+
+        const toDecimal = (nerd, str) => {
+          try { return parseFloat(nerd(str).evaluate().text()); } catch { return NaN; }
+        };
+
+        // Muestra una solución: exacta si es "corta", y decimal si no es entera.
+        const fmtSolution = (nerd, v, str) => {
+          // Si la solución todavía depende de otras variables, no hay decimal:
+          // solo se muestra expandida (ej: x = 3-3/2·y).
+          if (/[a-z]/i.test(str.replace(FN_WORDS, ""))) {
+            let ex = str;
+            try { ex = String(nerd(str).expand()); } catch {}
+            ex = stripOuterParens(ex).replace(/\*/g, "·");
+            return { line: `${v} = ${ex}`, value: ex };
+          }
+          const exact = stripOuterParens(str).replace(/\*/g, "·");
+          const dec = toDecimal(nerd, str);
+          if (/^-?\d+$/.test(exact)) return { line: `${v} = ${exact}`, value: exact };
+          if (Number.isFinite(dec)) {
+            const bigFraction = /\d{7,}/.test(exact);
+            const line = bigFraction ? `${v} ≈ ${fmtNum(dec)}` : `${v} = ${exact} ≈ ${fmtNum(dec)}`;
+            return { line, value: fmtNum(dec) };
+          }
+          return { line: `${v} = ${exact}`, value: exact };
+        };
+
+        const solveSingleEquation = (nerd, raw) => {
+          const norm = normalizeEquation(raw);
+          const vars = getVars(norm);
+          const [lhsRaw, rhsRaw] = raw.split("=");
+
+          if (!vars.length) {
+            const a = solveOne(lhsRaw).value, b = solveOne(rhsRaw).value;
+            if (a === null || b === null) return [{ line: `${raw} → no pude interpretar`, value: null }];
+            const ok = Math.abs(a - b) < 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+            return [{ line: `${raw.trim()}  →  ${ok ? "✅ verdadero" : "❌ falso"}`, value: null }];
+          }
+          if (/sin|cos|tan/.test(norm)) {
+            return [{ line: `${raw.trim()} → las ecuaciones trigonométricas aún no están soportadas`, value: null }];
+          }
+
+          const v = vars.includes("x") ? "x" : vars[0];
+          const [lhs, rhs] = norm.split("=");
+          const diff = `(${lhs})-(${rhs})`;
+          const residual = (val) => {
+            try { return Math.abs(parseFloat(nerd(diff, { [v]: String(val) }).evaluate().text())); }
+            catch { return NaN; }
+          };
+
+          // Identidad (se cumple siempre): prueba con valores cualquiera
+          if (vars.length === 1 && residual(1.7) < 1e-9 && residual(-2.9) < 1e-9 && residual(5.3) < 1e-9) {
+            return [{ line: `${raw.trim()}  →  se cumple para cualquier ${v} (identidad)`, value: null }];
+          }
+
+          let sols;
+          try {
+            const res = nerd.solve(norm, v);
+            sols = splitTop(String(res).replace(/^\[|\]$/g, ""));
+          } catch (e) {
+            if (/does not equal/i.test(String(e?.message))) {
+              return [{ line: `${raw.trim()}  →  no tiene solución`, value: null }];
+            }
+            return [{ line: `${raw.trim()} → no pude resolverla`, value: null }];
+          }
+
+          const out = [];
+          const seen = new Set();
+          let sawComplex = false;
+          for (const s of sols) {
+            if (isComplexStr(s)) { sawComplex = true; continue; }
+            // Si solo hay una variable, comprueba la solución sustituyéndola (descarta basura numérica)
+            if (vars.length === 1) {
+              const r = residual(`(${s})`);
+              if (!(r < 1e-6)) continue;
+            }
+            const f = fmtSolution(nerd, v, s);
+            const key = f.line;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(f);
+          }
+          if (!out.length) {
+            return [{ line: `${raw.trim()}  →  ${sawComplex ? "no tiene solución real" : "no pude resolverla"}`, value: null }];
+          }
+          if (vars.length > 1) out.push({ line: `(despejado para ${v}; hay otras variables)`, value: null });
+          return out;
+        };
+
+        const solveEquations = (eqLines) => {
+          const nerd = getNerd();
+          if (!nerd) return [{ line: "⚠️ Falta la librería nerdamer (revisa el @require en el userscript)", value: null }];
+
+          const norms = eqLines.map(normalizeEquation);
+          const allVars = [...new Set(norms.flatMap((n) => getVars(n) || []))];
+
+          // Sistema: 2+ ecuaciones y 2+ variables
+          if (eqLines.length >= 2 && allVars.length >= 2) {
+            try {
+              const res = nerd.solveEquations(norms);
+              const pairs = Array.isArray(res[0]) ? res : [];
+              if (!pairs.length) throw new Error("sin pares");
+              return pairs.map(([name, val]) => fmtSolution(nerd, name, String(val)));
+            } catch {
+              return [{ line: "Sistema sin solución única o no pude resolverlo", value: null }];
+            }
+          }
+          return eqLines.flatMap((l) => solveSingleEquation(nerd, l));
+        };
+
+        // Expresión algebraica sin "=" (ej: 2x+3x, (x+1)², x²-4)
+        const simplifyAlgebra = (text) => {
+          const nerd = getNerd();
+          if (!nerd) return [{ line: "⚠️ Falta la librería nerdamer (revisa el @require en el userscript)", value: null }];
+          try {
+            const norm = normalizeEquation(stripTimesX(text));
+            const simp = String(nerd(norm)).replace(/\*/g, "·");
+            const expanded = String(nerd(norm).expand()).replace(/\*/g, "·");
+            const factored = String(nerd(`factor(${norm})`)).replace(/\*/g, "·");
+            const lines = [{ line: `Simplificada: ${simp}`, value: simp }];
+            if (expanded !== simp) lines.push({ line: `Expandida: ${expanded}`, value: expanded });
+            if (factored !== simp && factored !== expanded) lines.push({ line: `Factorizada: ${factored}`, value: factored });
+            return lines;
+          } catch {
+            return [{ line: `${text.trim()} → no pude interpretar`, value: null }];
+          }
+        };
+
         // ---------- UI flotante ----------
         let icon = null;
         let bubble = null;
@@ -341,14 +544,12 @@
         const removeBubble = () => { bubble?.remove(); bubble = null; };
         const removeAll = () => { removeIcon(); removeBubble(); };
 
-        const showIcon = (rect, expressions) => {
+        const showIcon = (rect, text, expressions) => {
           removeAll();
           icon = document.createElement("div");
           icon.className = "mml-math-icon";
           icon.textContent = expressions.length > 1 ? "🧮×" + expressions.length : "🧮";
-          icon.title = expressions.length > 1
-            ? `Calcular ${expressions.length} operaciones`
-            : "Calcular selección";
+          icon.title = "Calcular / resolver selección";
           icon.style.left = `${Math.min(rect.right + 6, window.innerWidth - 32)}px`;
           icon.style.top = `${Math.max(rect.top - 4, 4)}px`;
           icon.dataset.mmlX = String(Math.min(rect.right + 6, window.innerWidth - 32));
@@ -357,7 +558,7 @@
           icon.addEventListener("mousedown", (e) => e.preventDefault()); // no perder la selección
           icon.addEventListener("click", (e) => {
             e.stopPropagation();
-            showResult(expressions);
+            analyzeAndShow(text);
           });
 
           document.body.appendChild(icon);
@@ -399,21 +600,23 @@
           }
         };
 
-        const showResult = (expressions) => {
+        // Muestra una burbuja con varias líneas. `values` = lo que se copia al hacer click.
+        const showBubble = (lines, values, plural) => {
           removeBubble();
 
-          const results = expressions.map(solveOne);
-          const text = results.map((r) => r.line).join("\n");
-          const copyLabel = results.length > 1 ? "Click para copiar los resultados" : "Click para copiar el resultado";
+          const text = lines.join("\n");
+          const copyLabel = plural ? "Click para copiar los resultados" : "Click para copiar el resultado";
 
           bubble = document.createElement("div");
           bubble.className = "mml-math-bubble";
           const resultText = document.createElement("span");
           resultText.textContent = text;
-          const resultSmall = document.createElement("small");
-          resultSmall.textContent = copyLabel;
           bubble.appendChild(resultText);
-          bubble.appendChild(resultSmall);
+          if (values.length) {
+            const resultSmall = document.createElement("small");
+            resultSmall.textContent = copyLabel;
+            bubble.appendChild(resultSmall);
+          }
 
           const iconRect = icon?.getBoundingClientRect();
           const top = iconRect ? iconRect.bottom + 6 : 20;
@@ -424,7 +627,6 @@
           bubble.addEventListener("mousedown", (e) => e.preventDefault());
           bubble.addEventListener("click", async (e) => {
             e.stopPropagation();
-            const values = results.filter((r) => r.value !== null).map((r) => r.value);
             if (!values.length) return;
             try {
               await navigator.clipboard.writeText(values.join("\n"));
@@ -436,6 +638,43 @@
           document.body.appendChild(bubble);
         };
 
+        const showResult = (expressions) => {
+          const results = expressions.map(solveOne);
+          showBubble(
+            results.map((r) => r.line),
+            results.filter((r) => r.value !== null).map((r) => r.value),
+            results.length > 1
+          );
+        };
+
+        // Decide qué hacer con la selección: ecuación -> resolver; letras (álgebra)
+        // -> simplificar; operación numérica -> calcular; otra cosa -> avisar.
+        const cleanTrailingEquals = (t) => t.replace(/[ \t]*=[ \t]*\??[ \t]*$/gm, "");
+
+        const analyzeAndShow = (text) => {
+          const eqLines = getEquationLines(text);
+          if (eqLines.length) {
+            const res = solveEquations(eqLines);
+            showBubble(res.map((r) => r.line), res.filter((r) => r.value !== null).map((r) => r.value), res.length > 1);
+            return;
+          }
+
+          const cleaned = cleanTrailingEquals(text);
+          if (hasVariable(cleaned)) {
+            const res = simplifyAlgebra(cleaned);
+            showBubble(res.map((r) => r.line), res.filter((r) => r.value !== null).map((r) => r.value), res.length > 1);
+            return;
+          }
+
+          const expressions = extractExpressions(cleaned);
+          if (expressions.length) {
+            showResult(expressions);
+            return;
+          }
+
+          showBubble(["No encontré una operación ni una ecuación en la selección"], [], false);
+        };
+
         // ---------- Detección de selección ----------
         const onSelectionUp = (e) => {
           // Si el mouseup ocurrió sobre el ícono o la burbuja, no reprocesar
@@ -445,9 +684,10 @@
 
           const sel = window.getSelection();
           const text = sel?.toString().trim();
-          const expressions = text ? extractExpressions(text) : [];
 
-          if (!expressions.length) {
+          // Ahora el ícono sale con CUALQUIER texto seleccionado; al hacer click
+          // se decide si es operación, ecuación, expresión algebraica u otra cosa.
+          if (!text || text.length > 2000) {
             removeAll();
             return;
           }
@@ -457,7 +697,7 @@
             const rects = range.getClientRects();
             const rect = rects[rects.length - 1] || range.getBoundingClientRect();
             if (!rect || (rect.width === 0 && rect.height === 0)) return;
-            showIcon(rect, expressions);
+            showIcon(rect, text, extractExpressions(cleanTrailingEquals(text)));
           } catch {
             removeAll();
           }
