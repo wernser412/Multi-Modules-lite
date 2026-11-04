@@ -1,3 +1,32 @@
+// ── Apilado de íconos de selección ─────────────────────────────────────
+// Los módulos "Resolver selección mate", "Buscar selección en Google" y
+// "Traducir selección" muestran un ícono junto al texto seleccionado.
+// Esta función (compartida por los tres, se define una sola vez) los
+// acomoda uno al lado del otro para que no se encimen.
+(function () {
+  if (window.__mmlStackIcons) return;
+  let timer = null;
+  window.__mmlStackIcons = function () {
+    clearTimeout(timer);
+    // setTimeout 0: corre cuando ya terminaron TODOS los handlers de mouseup.
+    timer = setTimeout(() => {
+      const selectors = [".mml-math-icon", "#mml-gs-icon.mml-gs-visible", ".mml-tr-icon"];
+      const els = selectors.map(q => document.querySelector(q)).filter(Boolean);
+      if (els.length < 2) return;
+      const GAP = 34;
+      let x = parseFloat(els[0].dataset.mmlX);
+      const y = parseFloat(els[0].dataset.mmlY);
+      if (isNaN(x) || isNaN(y)) return;
+      x = Math.max(4, Math.min(x, window.innerWidth - els.length * GAP - 4));
+      els.forEach((el, i) => {
+        const abs = getComputedStyle(el).position === "absolute";
+        el.style.left = `${x + i * GAP + (abs ? window.scrollX : 0)}px`;
+        el.style.top = `${y + (abs ? window.scrollY : 0)}px`;
+      });
+    }, 0);
+  };
+})();
+
 // translateSelect.js
 (function () {
   window.__MML_QUEUE = window.__MML_QUEUE || [];
@@ -167,6 +196,8 @@
           icon.title = "Traducir selección";
           icon.style.left = `${Math.min(rect.right + 6, window.innerWidth - 32)}px`;
           icon.style.top = `${Math.max(rect.top - 4, 4)}px`;
+          icon.dataset.mmlX = String(Math.min(rect.right + 6, window.innerWidth - 32));
+          icon.dataset.mmlY = String(Math.max(rect.top - 4, 4));
 
           icon.addEventListener("mousedown", (e) => e.preventDefault()); // no perder la selección
           icon.addEventListener("click", (e) => {
@@ -176,6 +207,7 @@
           });
 
           document.body.appendChild(icon);
+          window.__mmlStackIcons();
         };
 
         const positionBubble = () => {
