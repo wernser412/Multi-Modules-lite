@@ -113,8 +113,11 @@
         // selección 🧮/🔎/🌐, burbujas, cajas, panel ⚙) nunca deben bloquearse
         // ni iniciar una selección: si no, mientras hay texto seleccionado
         // (justo cuando aparecen esos íconos) ningún clic les llegaría.
+        // OJO: el propio link que se está seleccionando lleva la clase
+        // "mml-select-inside-link"; NO cuenta como interfaz propia (si contara,
+        // su clic no se bloquearía y se abriría el enlace).
         const isOwnUI = e => !!e.target?.closest?.(
-          '[class^="mml-"], [class*=" mml-"], [id^="mml-"]'
+          ':is([class^="mml-"], [class*=" mml-"], [id^="mml-"]):not(.mml-select-inside-link)'
         );
 
         const onMouseDown = e => {
@@ -136,6 +139,7 @@
           // Si hay un <a> ancestro, le forzamos user-select por si el sitio
           // se lo desactivó (común en tarjetas/enlaces clickeables).
           anchorEl = findLink(target);
+          // (la clase también desactiva el arrastre nativo del enlace vía CSS)
           if (anchorEl) anchorEl.classList.add("mml-select-inside-link");
         };
 
@@ -183,8 +187,22 @@
         };
 
         const onDragStart = e => {
-          if (state === "STARTED") e.preventDefault();
-          else if (state === "STARTING") startSelecting();
+          // Un <a> es "arrastrable" por defecto: si el usuario empieza a arrastrar
+          // para SELECCIONAR texto, Chrome inicia además el arrastre nativo del
+          // enlace, y al soltarlo sobre la página abre ese link (la redirección).
+          // Por eso se cancela el arrastre nativo también en STARTING (antes solo
+          // se cancelaba en STARTED).
+          if (state === "STARTING") startSelecting();
+          if (state === "STARTED" || state === "ENDING") e.preventDefault();
+        };
+
+        // Red de seguridad: si el arrastre nativo llegó a empezar igual, evita
+        // que soltarlo sobre la página navegue al enlace.
+        const onDragOverOrDrop = e => {
+          if (state === "STARTED" || state === "ENDING") e.preventDefault();
+        };
+        const onDragEnd = () => {
+          if (state !== "WAITING") startWaiting();
         };
 
         document.addEventListener("mousedown", onMouseDown, true);
@@ -192,12 +210,17 @@
         document.addEventListener("mouseup", onMouseUp, true);
         document.addEventListener("click", onClick, true);
         document.addEventListener("dragstart", onDragStart, true);
+        document.addEventListener("dragover", onDragOverOrDrop, true);
+        document.addEventListener("drop", onDragOverOrDrop, true);
+        document.addEventListener("dragend", onDragEnd, true);
 
         GM_addStyle(`
           .mml-select-inside-link {
             user-select: text !important;
             -webkit-user-select: text !important;
             -moz-user-select: text !important;
+            -webkit-user-drag: none !important;
+            user-drag: none !important;
           }
         `);
 
@@ -207,6 +230,9 @@
           document.removeEventListener("mouseup", onMouseUp, true);
           document.removeEventListener("click", onClick, true);
           document.removeEventListener("dragstart", onDragStart, true);
+          document.removeEventListener("dragover", onDragOverOrDrop, true);
+          document.removeEventListener("drop", onDragOverOrDrop, true);
+          document.removeEventListener("dragend", onDragEnd, true);
         };
       },
 
