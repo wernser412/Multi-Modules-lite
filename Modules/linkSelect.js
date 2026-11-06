@@ -120,9 +120,26 @@
           ':is([class^="mml-"], [class*=" mml-"], [id^="mml-"]):not(.mml-select-inside-link)'
         );
 
+        // ¿El mousedown cayó sobre texto que YA está seleccionado? Entonces el
+        // usuario quiere ARRASTRAR ese texto (p. ej. soltarlo en una pestaña para
+        // buscarlo en Google), no hacer otra selección: no se interviene.
+        const isOnSelectedText = e => {
+          try {
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+            const rects = sel.getRangeAt(0).getClientRects();
+            for (const r of rects) {
+              if (e.clientX >= r.left - 1 && e.clientX <= r.right + 1 &&
+                  e.clientY >= r.top - 1 && e.clientY <= r.bottom + 1) return true;
+            }
+          } catch {}
+          return false;
+        };
+
         const onMouseDown = e => {
           if (isOwnUI(e)) return;
           if (state !== "WAITING") return;
+          if (e.button === 0 && isOnSelectedText(e)) return; // arrastre nativo del texto seleccionado
           if (e.button !== 0 || e.altKey) return;
 
           const target = deepTarget(e);
@@ -192,7 +209,12 @@
           // enlace, y al soltarlo sobre la página abre ese link (la redirección).
           // Por eso se cancela el arrastre nativo también en STARTING (antes solo
           // se cancelaba en STARTED).
-          if (state === "STARTING") startSelecting();
+          if (state === "STARTING") {
+            const t = deepTarget(e);
+            const isMedia = !!t?.closest?.("img, svg, video, canvas, picture");
+            if (!anchorEl || isMedia) { startWaiting(); return; } // no es un arrastre de enlace: se deja nativo
+            startSelecting();
+          }
           if (state === "STARTED" || state === "ENDING") e.preventDefault();
         };
 
