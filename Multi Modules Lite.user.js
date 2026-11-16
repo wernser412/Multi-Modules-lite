@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ⚙ Multi Modules Lite
 // @namespace    http://tampermonkey.net/
-// @version      2026.11.03
+// @version      2026.11.15
 // @description  Framework modular + Ultra Unlock + Tooltip + módulos completos (cargados desde archivos separados)
 // @author       wernser412
 // @icon         https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/ICONO.png
@@ -26,7 +26,6 @@
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/plainCopy.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/showPasswords.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/mathSelectSolve.js
-// @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/googleSelectSearch.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/translateSelect.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/elementHider.js
 // @require      https://github.com/wernser412/Multi-Modules-lite/raw/refs/heads/main/Modules/forceLazyLoadImages.js
